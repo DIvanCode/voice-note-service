@@ -1,0 +1,6 @@
+aiogram<4,>=3.13
+openai-whisper>=20240930
+
+[dev]
+pytest<10,>=8
+pytest-asyncio<2,>=0.24
