@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from typing import Any
 
 from bot.states.note_states import NoteState
 
 logger = logging.getLogger(__name__)
+default_transcript_file = Path(__file__).resolve().parents[2] / "transcriptions.log"
+TRANSCRIPT_FILE = Path(os.getenv("TRANSCRIPT_FILE") or default_transcript_file)
 
 
 class VoiceHandler:
@@ -35,6 +39,8 @@ class VoiceHandler:
         try:
             audio = await self.telegram.download_voice(message)
             text = await self.stt.transcribe(audio)
+            with TRANSCRIPT_FILE.open("a", encoding="utf-8") as transcript_file:
+                transcript_file.write(f"{text}\n\n")
             note = await self.extraction.extract(text)
 
             await state.update_data(note=note.to_dict())
