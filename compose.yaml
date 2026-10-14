@@ -1,0 +1,16 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    # No CPU/RAM cap: the bot may use the VM's available resources.
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TRANSCRIPT_FILE: /data/transcriptions.log
+    volumes:
+      - ./data:/data
+      - whisper_cache:/cache
+
+volumes:
+  whisper_cache:

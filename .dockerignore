@@ -1,0 +1,11 @@
+.git
+.venv
+.env
+*.log
+data/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+tests/
+telegram_voice_notes_bot_spec.md
