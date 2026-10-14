@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.example/schemas/extraction-v1.json",
+  "title": "Lead extraction v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "client",
+    "problem",
+    "product",
+    "budget",
+    "deadline",
+    "next_step"
+  ],
+  "properties": {
+    "client": { "type": ["string", "null"] },
+    "problem": { "type": ["string", "null"] },
+    "product": { "type": ["string", "null"] },
+    "budget": { "type": ["string", "null"] },
+    "deadline": { "type": ["string", "null"] },
+    "next_step": { "type": ["string", "null"] }
+  }
+}
