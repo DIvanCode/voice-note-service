@@ -8,19 +8,6 @@ from extractor.app.extractor import extract_text
 
 
 class NoteExtractionService:
-    """Temporary replacement for the future LLM/ML note extraction model.
-
-    Until the real model is connected, the recognized text is returned as the
-    note body and the remaining fields contain explicit test values. This keeps
-    the complete Telegram flow usable without pretending that extraction has
-    already been implemented.
-
-    ``extract_text`` is a blocking call (HTTP request to llama.cpp that can take
-    up to ``UPSTREAM_TIMEOUT`` seconds), so it is executed in a worker thread
-    via ``asyncio.to_thread`` and does not block the event loop, the same way
-    ``SpeechToTextService`` runs Whisper. The extraction function may be
-    injected in tests to avoid calling llama.cpp.
-    """
 
     def __init__(
         self,
