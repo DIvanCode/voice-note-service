@@ -1,0 +1,28 @@
+services:
+  llama:
+    build:
+      context: ./extractor
+      dockerfile: Dockerfile.llama.cuda
+      args:
+        CUDA_VERSION: ${CUDA_VERSION:-12.8.1}
+        UBUNTU_VERSION: ${UBUNTU_VERSION:-24.04}
+        CUDA_DOCKER_ARCH: ${CUDA_DOCKER_ARCH:-default}
+    gpus: all
+    command:
+      - --model
+      - /models/${MODEL_FILE:-Qwen3-8B-Q4_K_M.gguf}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - ${LLAMA_CONTEXT:-4096}
+      - --batch-size
+      - ${LLAMA_BATCH:-64}
+      - --ubatch-size
+      - ${LLAMA_UBATCH:-32}
+      - --n-gpu-layers
+      - ${LLAMA_GPU_LAYERS:-999}
+      - --parallel
+      - ${LLAMA_PARALLEL_SLOTS:-1}
+      - --jinja

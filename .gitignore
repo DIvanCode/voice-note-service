@@ -5,6 +5,7 @@ __pycache__/
 .env
 *.log
 data/
+/models/*.gguf
 
 /extractor/test/results/
 # Local llama.cpp checkout and build

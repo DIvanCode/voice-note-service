@@ -2,16 +2,47 @@ services:
   bot:
     build: .
     restart: unless-stopped
-    network_mode: host
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
       WHISPER_MODEL: ${WHISPER_MODEL:-base}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TRANSCRIPT_FILE: /data/transcriptions.log
-      LLAMA_URL: http://127.0.0.1:8080
+      LLAMA_URL: http://llama:8080
+      UPSTREAM_TIMEOUT: ${UPSTREAM_TIMEOUT:-180}
     volumes:
       - ./data:/data
       - whisper_cache:/cache
+    depends_on:
+      llama:
+        condition: service_healthy
+
+  llama:
+    build:
+      context: ./extractor
+      dockerfile: Dockerfile.llama.cpu
+    restart: unless-stopped
+    command:
+      - --model
+      - /models/${MODEL_FILE:-Qwen3-8B-Q4_K_M.gguf}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - ${LLAMA_CONTEXT:-4096}
+      - --batch-size
+      - ${LLAMA_BATCH:-64}
+      - --ubatch-size
+      - ${LLAMA_UBATCH:-32}
+      - --parallel
+      - ${LLAMA_PARALLEL_SLOTS:-1}
+      - --jinja
+    environment:
+      LLAMA_ARG_HOST: 0.0.0.0
+    volumes:
+      - ./extractor/models:/models:ro
+    expose:
+      - "8080"
 
 volumes:
   whisper_cache:

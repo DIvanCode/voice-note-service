@@ -1,0 +1,10 @@
+.git
+llama.cpp/.git
+llama.cpp/build
+llama.cpp/models
+llama.cpp/tests
+llama.cpp/docs
+llama.cpp/tools/ui/node_modules
+test/results
+models
+*.gguf
