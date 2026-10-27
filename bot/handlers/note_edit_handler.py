@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from bot.models.note import Note
+from bot.models.note import FIELD_LABELS, Note
 from bot.states.note_states import NoteState
 
-EDITABLE_FIELDS = {"note", "full_name", "phone", "topic"}
-OPTIONAL_FIELDS = {"full_name", "phone", "topic"}
+EDITABLE_FIELDS = set(FIELD_LABELS)
 
 
 class NoteEditHandler:
@@ -49,12 +48,7 @@ class NoteEditHandler:
             return
 
         value = edited_text.strip()
-        if field == "note" and (not value or value == "-"):
-            await self.telegram.send_error(user_id, "Текст заметки не может быть пустым.")
-            return
-
-        normalized_value = None if field in OPTIONAL_FIELDS and value == "-" else value
-        note_data[field] = normalized_value
+        note_data[field] = None if not value or value == "-" else value
         note = Note.from_dict(note_data)
 
         await state.update_data(note=note.to_dict(), editing_field=None)

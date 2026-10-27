@@ -4,10 +4,11 @@ import asyncio
 from collections.abc import Callable
 
 from bot.models.note import Note
-from extractor.app.extractor import extract_text
+from extractor.app.extractor import extract_text, validate_result
 
 
 class NoteExtractionService:
+    """Convert the local model's six fields into a note for Telegram review."""
 
     def __init__(
         self,
@@ -23,16 +24,8 @@ class NoteExtractionService:
         return await asyncio.to_thread(self._extract_sync, text)
 
     def _extract_sync(self, text: str) -> Note:
-        result = self.extract_fn(text)
-
-        body = "\n".join(
-            f"{key}: {value}"
-            for key, value in result.items()
-            if value is not None
-        )
-        return Note(
-            note=body,
-            full_name="Тестовый Клиент",
-            phone="+79990000000",
-            topic="Тестовая тема",
-        )
+        result = validate_result(self.extract_fn(text))
+        return Note(**{
+            field: (value.strip() or None) if value is not None else None
+            for field, value in result.items()
+        })

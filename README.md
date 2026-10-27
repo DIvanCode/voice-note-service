@@ -2,13 +2,14 @@
 
 Telegram-бот для подготовки структурированных заметок агента по недвижимости из голосовых сообщений.
 
-Текущая версия уже выполняет локальное распознавание речи через OpenAI Whisper. Вторая ML/LLM-модель пока заменена предсказуемой тестовой реализацией, а CRM остаётся явной заглушкой до получения реального API-контракта.
+Бот распознаёт речь через OpenAI Whisper и извлекает поля заметки локальной моделью через `llama.cpp`. CRM остаётся явной заглушкой до получения реального API-контракта.
 
 ## Стек
 
 - Python 3.12
 - aiogram 3.x
 - OpenAI Whisper
+- llama.cpp с локальной GGUF-моделью
 - long polling
 - aiogram `MemoryStorage` — данные текущей заметки живут только в памяти процесса
 
@@ -23,7 +24,7 @@ sudo apt update
 sudo apt install ffmpeg
 ```
 
-## Запуск
+## Локальный запуск без Docker
 
 ```bash
 python3.12 -m venv .venv
@@ -32,24 +33,22 @@ pip install -e .
 cp .env.example .env
 
 export TELEGRAM_BOT_TOKEN="..."
-export WHISPER_MODEL="large"
+export WHISPER_MODEL="small"
 
 python -m bot.main
 ```
 
-При первом запуске Whisper скачает веса выбранной модели. Модель загружается один раз при старте приложения и затем переиспользуется для всех сообщений. Для локальной проверки на слабой машине можно временно выбрать меньшую модель через `WHISPER_MODEL`.
+Перед обработкой голосовых сообщений без Docker установите `llama.cpp` и подготовьте GGUF-модель согласно `extractor/config/model.json`, затем запустите сервер через `python extractor/app/main.py`. При первом запуске Whisper скачает свои веса. Для локальной проверки на слабой машине можно временно выбрать меньшую модель через `WHISPER_MODEL`.
 
-## Запуск в Docker Compose
+## Быстрый запуск на Ubuntu
 
-В `compose.yaml` описан один контейнер бота. Укажите `TELEGRAM_BOT_TOKEN` и `WHISPER_MODEL` в `.env` (пример — `.env.example`). Для VM с ограниченной памятью начните с `WHISPER_MODEL=base`; модель `large` требует значительно больше RAM.
+Установите [Docker Engine и Compose plugin](https://docs.docker.com/engine/install/ubuntu/), затем из каталога проекта выполните:
 
 ```bash
-mkdir -p data
-docker compose up -d --build
-docker compose logs -f bot
+./scripts/ubuntu-deploy.sh
 ```
 
-Бот использует Telegram long polling, поэтому открывать порт не нужно. Распознанный текст добавляется в `data/transcriptions.log`, а скачанные веса Whisper сохраняются в томе `whisper_cache` между пересозданиями контейнера. Для контейнера не задан жёсткий лимит CPU или RAM: он может использовать доступные ресурсы VM. Docker не увеличивает объём памяти VM.
+Скрипт создаст `.env`, скрыто запросит токен Telegram, скачает небольшую GGUF-модель и запустит бота вместе с `llama.cpp`. Повторный запуск сохранит токен и уже скачанную модель. Для NVIDIA GPU после установки NVIDIA Container Toolkit используйте `./scripts/ubuntu-deploy.sh --gpu`.
 
 Для тестов:
 
@@ -62,29 +61,24 @@ pytest
 
 - `/start` с короткой инструкцией пользователю;
 - получение Telegram voice;
-- блокировка второго voice до завершения/отмены текущей заметки;
+- подсказка о пересылке второго voice после завершения/отмены текущей заметки;
 - скачивание аудио в bytes;
 - локальное распознавание через Whisper;
 - безопасный временный `.ogg` файл с гарантированным удалением;
-- временная text-to-note реализация;
+- извлечение шести полей заметки через локальную модель;
 - preview;
-- редактирование темы, текста, ФИО и телефона;
-- запрет отправки в CRM без темы;
+- редактирование лида, темы, описания, следующего шага, срока и дополнительной информации;
+- запрет отправки в CRM без лида и темы; предупреждение о пустых рекомендуемых полях;
 - confirm/cancel flow;
 - in-memory состояние;
 - обработка ошибок без логирования содержимого пользовательских данных;
 - unit-тесты orchestration-логики.
 
-## Временная реализация второй модели
+## Извлечение полей заметки
 
-Пока настоящая модель структурирования текста не подключена, `NoteExtractionService` возвращает:
+`NoteExtractionService` вызывает локальную модель в worker thread и переводит её результат в поля заметки. Лидом служит адрес объекта или номер телефона человека. Если модель не нашла лид или тему, пользователь добавляет их вручную перед отправкой; тестовые значения не подставляются.
 
-- `note` — исходный распознанный Whisper текст;
-- `full_name` — `Тестовый Клиент`;
-- `phone` — `+79990000000`;
-- `topic` — `Тестовая тема`.
-
-Благодаря этому можно проверить весь Telegram-flow и редактирование без второй нейронной сети.
+«Описание», «Следующий шаг» и «Срок» рекомендуются: бот предупреждает, если они пусты, но не блокирует отправку. «Дополнительная информация» необязательна.
 
 ## Что пока является заглушкой
 
@@ -99,117 +93,41 @@ pytest
 
 Подробные требования и границы текущей реализации находятся в [`telegram_voice_notes_bot_spec.md`](telegram_voice_notes_bot_spec.md).
 
-## Развёртывание нейросети в Docker
+## Развёртывание на Ubuntu
 
-Docker Compose запускает бота и `llama.cpp` как два сервиса в одной сети. Бот обращается к модели по внутреннему адресу `http://llama:8080`; отдельный запуск `python extractor/app/main.py` больше не требуется.
-
-Модель в Docker-образ не включается. GGUF-файл хранится отдельно в каталоге `extractor/models/`, поэтому при переносе на другой сервер или замене Qwen3 не требуется пересобирать образ бота.
-
-### Требования к серверу
-
-На любом сервере нужны:
-
-- Docker Engine с Docker Compose Plugin;
-- достаточно места для Docker-образов и GGUF-файла;
-- файл модели в формате GGUF;
-- значение `TELEGRAM_BOT_TOKEN`.
-
-Для NVIDIA GPU дополнительно нужны установленный драйвер NVIDIA и NVIDIA Container Toolkit. Docker должен видеть GPU до запуска проекта:
+Для сервера нужны Git, Docker Engine с Compose plugin, `curl`, доступ к GitHub Container Registry и Hugging Face. Установка Docker описана в [официальной инструкции для Ubuntu](https://docs.docker.com/engine/install/ubuntu/). Запускайте команды от пользователя с доступом к Docker; скрипт не устанавливает системные пакеты и не требует `sudo`.
 
 ```bash
-nvidia-smi
-docker run --rm --gpus all nvidia/cuda:12.8.1-runtime-ubuntu24.04 nvidia-smi
-```
-
-Вторая команда должна показать ту же видеокарту внутри контейнера. Если сервер работает без NVIDIA или GPU недоступен Docker, используйте обычный CPU-профиль.
-
-### Подготовка проекта
-
-Скопируйте проект и GGUF-модель на сервер:
-
-```bash
-git clone <repository-url> voice-note-service
+git clone https://github.com/DIvanCode/voice-note-service.git
 cd voice-note-service
-mkdir -p extractor/models data
-cp /path/to/Qwen3-8B-Q4_K_M.gguf extractor/models/
-cp .env.example .env
+./scripts/ubuntu-deploy.sh
 ```
 
-В `.env` задайте `TELEGRAM_BOT_TOKEN`. Имя `MODEL_FILE` должно совпадать с именем файла в `extractor/models/`. Остальные параметры можно менять без редактирования Python-кода:
+При первом запуске скрипт создаёт `.env` с правами `600`, скрыто запрашивает `TELEGRAM_BOT_TOKEN`, скачивает [Qwen3-0.6B-Q8_0.gguf](https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/tree/main) в `extractor/models/` и запускает Compose. По умолчанию Whisper использует `small`, а `llama.cpp` — небольшую модель 0.6B и контекст 2048. Это настройки для первого запуска на ограниченных ресурсах; качество извлечения на вашей задаче нужно проверить на собственных голосовых сообщениях.
 
-```dotenv
-MODEL_FILE=Qwen3-8B-Q4_K_M.gguf
-LLAMA_CONTEXT=4096
-LLAMA_BATCH=64
-LLAMA_UBATCH=32
-LLAMA_PARALLEL_SLOTS=1
-LLAMA_GPU_LAYERS=999
-WHISPER_MODEL=base
-```
+Compose использует готовый [официальный образ `llama.cpp`](https://github.com/ggml-org/llama.cpp/blob/master/docs/docker.md), поэтому клонировать и собирать `llama.cpp` на сервере больше не требуется. Модель хранится отдельно от образа, веса Whisper — в томе `whisper_cache`, а расшифровки — в `data/transcriptions.log`. Бот работает через Telegram long polling: открывать входящий порт не нужно. Сервис бота стартует после проверки готовности модели.
 
-`LLAMA_GPU_LAYERS=999` означает попытку выгрузить на GPU все возможные слои. Если модель не помещается в VRAM, `llama.cpp` оставит часть слоёв в RAM. На сервере с другой видеокартой это значение можно изменить без пересборки приложения. `LLAMA_PARALLEL_SLOTS` задаёт количество параллельных слотов модели; увеличивайте его только после проверки RAM, VRAM и latency.
+### Другая модель или NVIDIA GPU
 
-### Запуск на NVIDIA GPU
+Чтобы использовать свой GGUF-файл, скопируйте его в `extractor/models/`, укажите имя файла в `.env` через `MODEL_FILE` и повторно запустите скрипт. Существующий файл скрипт не скачивает заново.
 
-Для NVIDIA используется тот же базовый Compose-файл и аппаратный override:
+Для NVIDIA GPU сначала установите драйвер и [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html). Затем выполните:
 
 ```bash
-docker compose -f compose.yaml -f compose.cuda.yaml up -d --build
+./scripts/ubuntu-deploy.sh --gpu
 ```
 
-CUDA-образ `llama.cpp` собирается из исходного дерева, которое находится в `extractor/llama.cpp`. Версии CUDA и Ubuntu задаются в `.env` через `CUDA_VERSION` и `UBUNTU_VERSION`. По умолчанию используется CUDA 12.8.1 и Ubuntu 24.04; при несовместимости с драйвером выберите поддерживаемую версию CUDA.
+Этот режим использует готовый образ `server-cuda` и параметр `LLAMA_GPU_LAYERS` из `.env`. Если нужна другая версия CUDA или специальная сборка, можно указать свой образ через `LLAMA_CUDA_IMAGE` в `.env`. CPU-образ аналогично переопределяется через `LLAMA_IMAGE`.
 
-Проверка запуска:
-
-```bash
-docker compose -f compose.yaml -f compose.cuda.yaml ps
-docker compose -f compose.yaml -f compose.cuda.yaml logs -f llama
-```
-
-Сервис `bot` запускается только после успешного healthcheck `llama.cpp`. В логах `llama` должны быть признаки загрузки CUDA backend и модели. Сам порт модели наружу не публикуется: он доступен только контейнеру бота.
-
-### Запуск без NVIDIA GPU
-
-На CPU-сервере используется базовый Compose-файл:
+### Проверка и управление
 
 ```bash
-docker compose up -d --build
 docker compose ps
-docker compose logs -f llama
-```
-
-В этом режиме CUDA Toolkit и NVIDIA Container Toolkit не нужны. Для CPU может потребоваться меньшая GGUF-модель, меньшее значение `LLAMA_CONTEXT` или более консервативные `LLAMA_BATCH` и `LLAMA_UBATCH`.
-
-### Перенос на другое железо
-
-Исходный код бота, сетевой контракт и Compose-конфигурация остаются одинаковыми. При переносе меняются только `.env`, GGUF-файл и, если нужно, выбранный профиль:
-
-```bash
-# NVIDIA
-docker compose -f compose.yaml -f compose.cuda.yaml up -d --build
-
-# CPU
-docker compose up -d --build
-```
-
-Текущая конфигурация собирает `llama.cpp` из исходников проекта, что сохраняет одинаковую версию и поведение на разных серверах. Локальная CUDA-архитектура не зашита в код бота; при необходимости её можно задать переменной `CUDA_DOCKER_ARCH`.
-
-### Остановка и диагностика
-
-```bash
-# NVIDIA
-docker compose -f compose.yaml -f compose.cuda.yaml down
-
-# CPU
+docker compose logs -f bot llama
+docker compose restart
 docker compose down
 ```
 
-Если `bot` не запускается, сначала проверьте состояние модельного сервиса:
+Для GPU-режима добавляйте к командам `docker compose` параметры `-f compose.yaml -f compose.cuda.yaml`. Чтобы обновить код и перезапустить сервисы, выполните `git pull` и снова `./scripts/ubuntu-deploy.sh` (или с `--gpu`). Скрипт сохранит существующий `.env` и модель.
 
-```bash
-docker compose ps
-docker compose logs --tail=200 llama
-docker compose logs --tail=200 bot
-```
-
-Частые причины ошибки: отсутствующий файл `extractor/models/${MODEL_FILE}`, неподдерживаемая версия CUDA для драйвера, отсутствие `--gpus all` для NVIDIA-профиля или недостаток RAM/VRAM. После замены модели достаточно обновить `MODEL_FILE` и перезапустить Compose; образ бота пересобирать не требуется.
+CRM пока остаётся заглушкой: бот подготовит заметку, но не сохранит её в реальную CRM.

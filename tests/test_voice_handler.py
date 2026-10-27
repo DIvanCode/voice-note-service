@@ -16,10 +16,9 @@ class Extraction:
     async def extract(self, text):
         assert text == "transcript"
         return Note(
-            note="result",
-            full_name="Иван Иванов",
-            phone="+7999",
+            lead="+7999",
             topic="Встреча",
+            description="result",
         )
 
 
@@ -48,7 +47,7 @@ async def test_second_voice_is_rejected_while_note_is_active():
 
     await handler.handle_voice(FakeMessage(), state)
 
-    assert telegram.calls == [("busy", True, "77")]
+    assert telegram.calls == [("busy", True, "77", False)]
 
 
 @pytest.mark.asyncio
@@ -77,4 +76,4 @@ async def test_second_voice_during_processing_has_no_invalid_actions():
 
     await handler.handle_voice(FakeMessage(), state)
 
-    assert telegram.calls == [("busy", False, None)]
+    assert telegram.calls == [("busy", False, None, False)]

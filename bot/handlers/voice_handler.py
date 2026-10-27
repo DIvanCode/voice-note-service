@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from bot.models.note import Note
 from bot.states.note_states import NoteState
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ class VoiceHandler:
                     NoteState.PREVIEW.value,
                     NoteState.EDITING.value,
                 },
+                can_confirm=bool(data.get("note") and Note.from_dict(data["note"]).can_be_sent_to_crm),
             )
             return
 
