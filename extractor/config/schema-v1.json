@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.example/schemas/extraction-v1.json",
+  "title": "CRM note extraction v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "lead",
+    "topic",
+    "description",
+    "next_step",
+    "deadline",
+    "additional_info"
+  ],
+  "properties": {
+    "lead": { "type": ["string", "null"] },
+    "topic": { "type": ["string", "null"] },
+    "description": { "type": ["string", "null"] },
+    "next_step": { "type": ["string", "null"] },
+    "deadline": { "type": ["string", "null"] },
+    "additional_info": { "type": ["string", "null"] }
+  }
+}

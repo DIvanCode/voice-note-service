@@ -11,6 +11,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY bot ./bot
+COPY extractor ./extractor
 
 # The VM runs Whisper on CPU; avoid downloading CUDA packages with PyTorch.
 RUN python -m pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
