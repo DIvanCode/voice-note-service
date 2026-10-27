@@ -9,3 +9,8 @@ __pycache__/
 *.egg-info/
 tests/
 telegram_voice_notes_bot_spec.md
+models
+extractor/llama.cpp
+extractor/models
+extractor/test/results
+*.gguf

@@ -1,0 +1,41 @@
+FROM ubuntu:24.04 AS build
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY llama.cpp ./llama.cpp
+
+RUN cmake -S llama.cpp -B build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DGGML_NATIVE=OFF \
+        -DLLAMA_BUILD_TESTS=OFF \
+        -DGGML_BACKEND_DL=ON \
+        -DGGML_CPU_ALL_VARIANTS=ON \
+    && cmake --build build --target llama-server -j"$(nproc)" \
+    && mkdir -p /out/lib \
+    && find build -name '*.so*' -exec cp -P {} /out/lib/ \; \
+    && find build -name 'libggml-*.so' -exec cp -P {} /out/ \; \
+    && cp build/bin/llama-server /out/llama-server
+
+FROM ubuntu:24.04
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /out/ /app/
+
+ENV LLAMA_ARG_HOST=0.0.0.0
+ENV LD_LIBRARY_PATH=/app/lib
+WORKDIR /app
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=30 \
+    CMD curl -fsS http://127.0.0.1:8080/health || exit 1
+
+ENTRYPOINT ["/app/llama-server"]

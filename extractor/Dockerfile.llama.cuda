@@ -1,0 +1,46 @@
+ARG CUDA_VERSION=12.8.1
+ARG UBUNTU_VERSION=24.04
+ARG CUDA_DOCKER_ARCH=default
+
+FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS build
+
+ARG CUDA_DOCKER_ARCH
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY llama.cpp ./llama.cpp
+
+RUN cmake_args="-DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_CUDA=ON -DLLAMA_BUILD_TESTS=OFF -DGGML_BACKEND_DL=ON" \
+    && if [ "$CUDA_DOCKER_ARCH" != "default" ]; then \
+        cmake_args="$cmake_args -DCMAKE_CUDA_ARCHITECTURES=$CUDA_DOCKER_ARCH"; \
+    fi \
+    && cmake -S llama.cpp -B build $cmake_args \
+    && cmake --build build --target llama-server -j"$(nproc)" \
+    && mkdir -p /out/lib \
+    && find build -name '*.so*' -exec cp -P {} /out/lib/ \; \
+    && find build -name 'libggml-*.so' -exec cp -P {} /out/ \; \
+    && cp build/bin/llama-server /out/llama-server
+
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION}
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /out/ /app/
+
+ENV LLAMA_ARG_HOST=0.0.0.0
+ENV LD_LIBRARY_PATH=/app/lib
+WORKDIR /app
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=30 \
+    CMD curl -fsS http://127.0.0.1:8080/health || exit 1
+
+ENTRYPOINT ["/app/llama-server"]

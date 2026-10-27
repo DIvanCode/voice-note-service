@@ -1,5 +1,5 @@
 from bot.models.note import Note
-
+from extractor.app.extractor import extract_text
 
 class NoteExtractionService:
     """Temporary replacement for the future LLM/ML note extraction model.
@@ -14,9 +14,15 @@ class NoteExtractionService:
         text = text.strip()
         if not text:
             raise ValueError("Transcribed text is empty")
+        json = extract_text(text)
 
+        body = "\n".join(
+            f"{key}: {value}"
+            for key, value in json.items()
+            if value is not None
+        )
         return Note(
-            note=text,
+            note=body,
             full_name="Тестовый Клиент",
             phone="+79990000000",
             topic="Тестовая тема",
