@@ -48,7 +48,7 @@ async def test_save_and_view_requires_separate_password(app):
         assert "<th>Агент</th>" in page.text
         assert "Тестовый Клиент" in page.text
         assert "Тестовый Агент" in page.text
-        assert re.search(r"\\d{2}\\.\\d{2}\\.\\d{4}, \\d{2}:\\d{2} UTC", page.text)
+        assert re.search(r"\d{2}\.\d{2}\.\d{4}, \d{2}:\d{2} UTC", page.text)
 
 
 @pytest.mark.asyncio
@@ -228,7 +228,7 @@ async def test_notes_ui_escapes_client_and_agent_names_from_fixtures():
     app = create_app(api_key=KEY, view_password=VIEW, fixtures=fixtures)
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://mock-crm") as client:
         saved = await client.post("/client/add-note", json={
-            "key": KEY, "note": "Лид: " + CLIENT + "\\n\\nТема: Тест",
+            "key": KEY, "note": "Лид: " + CLIENT + "\n\nТема: Тест",
             "user_phone": AGENT, "client_phone": CLIENT,
         })
         assert saved.status_code == 201
@@ -250,9 +250,9 @@ async def test_only_filled_agent_fields_are_included_in_crm_note(app):
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://mock-crm") as client:
         data = (await client.get("/api/notes", auth=("viewer", VIEW))).json()
         note_text = data["notes"][0]["note"]
-        assert note_text == ("Лид: +" + CLIENT + "\\n\\nТема: Встреча"
-                             + "\\n\\nОписание: Показ квартиры"
-                             + "\\n\\nДополнительная информация: Нужна парковка")
+        assert note_text == ("Лид: +" + CLIENT + "\n\nТема: Встреча"
+                             + "\n\nОписание: Показ квартиры"
+                             + "\n\nДополнительная информация: Нужна парковка")
         page = await client.get("/notes", auth=("viewer", VIEW))
         assert "Дополнительная информация: Нужна парковка" in page.text
         assert "Следующий шаг:" not in page.text
