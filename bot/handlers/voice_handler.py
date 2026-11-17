@@ -62,8 +62,11 @@ class VoiceHandler:
             # Do not log audio, transcript, note fields, Telegram IDs or exception text.
             logger.warning("Voice processing failed (%s)", type(exc).__name__)
             await state.clear()
-            await self.telegram.send_error(
-                user_id,
-                "Не удалось обработать голосовое сообщение. Попробуйте позже.",
-                card_id,
-            )
+            try:
+                await self.telegram.send_error(
+                    user_id,
+                    "Не удалось обработать голосовое сообщение. Попробуйте позже.",
+                    card_id,
+                )
+            finally:
+                await self.telegram.send_next_note_prompt(user_id)
