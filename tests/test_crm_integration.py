@@ -115,3 +115,37 @@ async def test_http_client_to_mock_end_to_end(app):
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://mock-crm") as client:
         response = await client.get("/api/notes", auth=("viewer", VIEW))
     assert len(response.json()["notes"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_synthetic_extractor_identity_never_reaches_real_crm():
+    requests = []
+    service = CRMService(
+        "https://your-crm.example/client/add-note",
+        KEY,
+        transport=httpx.MockTransport(lambda request: requests.append(request) or httpx.Response(201)),
+    )
+    with pytest.raises(CRMError) as exc:
+        await service.create_note(
+            Note(note="text", topic="Тест", phone="+" + CLIENT, full_name="Тестовый Клиент"),
+            user_phone=AGENT,
+        )
+    assert exc.value.code == "test_data"
+    assert requests == []
+
+
+@pytest.mark.asyncio
+async def test_transport_errors_are_uncertain_and_not_retried():
+    calls = []
+    def broken(request):
+        calls.append(request)
+        raise httpx.ReadTimeout("sensitive upstream exception")
+    service = CRMService(
+        "http://mock-crm:8000/client/add-note", KEY,
+        transport=httpx.MockTransport(broken),
+    )
+    with pytest.raises(CRMError) as exc:
+        await service.create_note(Note(note="text", topic="Тест", phone=CLIENT), user_phone=AGENT)
+    assert exc.value.code == "unknown_result"
+    assert "sensitive" not in str(exc.value)
+    assert len(calls) == 1

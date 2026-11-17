@@ -36,6 +36,7 @@ class CRMError(RuntimeError):
             "niether_phone_nor_address": "Для сохранения нужен телефон клиента.",
             "not_implemented": "CRM пока не поддерживает поиск клиента по адресу.",
             "invalid_request": "CRM отклонила данные. Проверьте номер и текст заметки.",
+            "test_data": "В заметке остались тестовые данные клиента. Исправьте ФИО и телефон перед отправкой в настоящую CRM.",
         }
         return messages.get(
             self.code,
@@ -110,6 +111,14 @@ class CRMService:
             raise CRMNotConfiguredError("CRM connection or authorized employee is not configured")
         if not note.can_be_sent_to_crm or not note.note.strip():
             raise CRMError("empty_note")
+        # The current extractor still generates a synthetic client for demos.
+        # Never send that unedited placeholder to a real HTTPS CRM.
+        if (
+            urlsplit(self._url).scheme == "https"
+            and note.full_name == "Тестовый Клиент"
+            and _phone(note.phone) == "79990000000"
+        ):
+            raise CRMError("test_data")
         client_phone = _phone(note.phone)
         if not client_phone:
             raise CRMError("niether_phone_nor_address")
