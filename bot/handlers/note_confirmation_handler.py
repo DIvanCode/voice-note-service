@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from bot.models.note import Note
-from bot.services.crm_service import CRMNotConfiguredError
+from bot.services.crm_service import CRMError, CRMNotConfiguredError
 from bot.states.note_states import NoteState
 
 logger = logging.getLogger(__name__)
 
 
 class NoteConfirmationHandler:
-    def __init__(self, telegram_service, crm_service):
+    def __init__(self, telegram_service, crm_service, user_phones: Mapping[int, str] | None = None):
         self.telegram = telegram_service
         self.crm = crm_service
+        self.user_phones = user_phones
 
     async def confirm(self, user_id: int, state: Any) -> None:
         data = await state.get_data()
@@ -29,12 +31,19 @@ class NoteConfirmationHandler:
             await self.telegram.send_topic_required(user_id)
             return
 
+        if self.user_phones is not None and user_id not in self.user_phones:
+            await state.set_state(NoteState.PREVIEW.value)
+            await self.telegram.send_error(user_id, "Доступ к CRM не предоставлен.")
+            return
+
         await state.set_state(NoteState.SAVING.value)
         try:
-            await self.crm.create_note(note)
+            if self.user_phones is None:
+                # Preserve the original small service interface for test doubles.
+                await self.crm.create_note(note)
+            else:
+                await self.crm.create_note(note, user_phone=self.user_phones[user_id])
         except CRMNotConfiguredError:
-            # Until CRM is connected, confirmation ends the current test flow so
-            # the user can immediately send the next voice message.
             await state.clear()
             await self.telegram.send_error(
                 user_id,
@@ -42,12 +51,17 @@ class NoteConfirmationHandler:
                 "Текущая заметка автоматически отменена — можно отправить новое голосовое сообщение.",
             )
             return
+        except CRMError as exc:
+            logger.warning("CRM rejected note (%s)", exc.code)
+            await state.set_state(NoteState.PREVIEW.value)
+            await self.telegram.send_error(user_id, exc.user_message)
+            return
         except Exception as exc:
             logger.warning("CRM save failed (%s)", type(exc).__name__)
             await state.set_state(NoteState.PREVIEW.value)
             await self.telegram.send_error(
                 user_id,
-                "Не удалось сохранить заметку в CRM. Попробуйте позже.",
+                "Результат отправки не подтверждён. Проверьте CRM перед повторной попыткой, чтобы не создать дубликат.",
             )
             return
 
