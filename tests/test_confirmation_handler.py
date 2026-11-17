@@ -62,12 +62,13 @@ async def test_successful_save_clears_memory_and_removes_actions():
     assert crm.notes[0].missing_recommended_fields == ("description", "next_step", "deadline")
     assert state.state is None
     assert state.data == {}
-    assert [call[0] for call in telegram.calls] == ["saving", "success"]
+    assert [call[0] for call in telegram.calls] == ["saving", "success", "next_note"]
     assert telegram.calls[0][1] == telegram.calls[1][1] == 500
+    assert telegram.calls[-1] == ("next_note", 1)
 
 
 @pytest.mark.asyncio
-async def test_unconfigured_crm_closes_card_without_creating_another():
+async def test_unconfigured_crm_closes_card_and_invites_next_note():
     class StubCRM:
         async def create_note(self, note):
             raise CRMNotConfiguredError()
@@ -79,9 +80,10 @@ async def test_unconfigured_crm_closes_card_without_creating_another():
 
     assert state.state is None
     assert state.data == {}
-    assert [call[0] for call in telegram.calls] == ["saving", "error"]
-    assert telegram.calls[-1][2] == 500
-    assert "не сохранил и закрыл" in telegram.calls[-1][1]
+    assert [call[0] for call in telegram.calls] == ["saving", "error", "next_note"]
+    assert telegram.calls[-2][2] == 500
+    assert "не сохранил и закрыл" in telegram.calls[-2][1]
+    assert telegram.calls[-1] == ("next_note", 1)
 
 
 @pytest.mark.asyncio
@@ -138,3 +140,4 @@ async def test_successful_crm_request_is_not_retried_when_telegram_edit_fails():
     assert len(crm.notes) == 1
     assert state.state is None
     assert state.data == {}
+    assert telegram.calls[-1] == ("next_note", 1)
