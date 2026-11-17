@@ -11,7 +11,7 @@ async def test_edit_allows_topic_change_and_returns_to_preview():
     telegram = FakeTelegram()
     state = FakeState()
     state.state = NoteState.PREVIEW.value
-    state.data["note"] = Note(note="text", topic=None).to_dict()
+    state.data["note"] = Note(description="text", lead="ул. Лесная, 1").to_dict()
     state.data["flow_id"] = "123"
     handler = NoteEditHandler(telegram)
 
@@ -30,15 +30,15 @@ async def test_optional_field_can_be_cleared_with_dash():
     state = FakeState()
     state.state = NoteState.EDITING.value
     state.data = {
-        "note": Note(note="text", full_name="Иван", topic="Тема").to_dict(),
-        "editing_field": "full_name",
+        "note": Note(description="text", next_step="Позвонить", topic="Тема").to_dict(),
+        "editing_field": "next_step",
         "flow_id": "123",
     }
     handler = NoteEditHandler(telegram)
 
     await handler.save_edit(1, "-", state)
 
-    assert state.data["note"]["full_name"] is None
+    assert state.data["note"]["next_step"] is None
 
 
 @pytest.mark.asyncio
@@ -46,7 +46,7 @@ async def test_cancel_clears_active_note():
     telegram = FakeTelegram()
     state = FakeState()
     state.state = NoteState.PREVIEW.value
-    state.data["note"] = Note(note="text", topic="Тема").to_dict()
+    state.data["note"] = Note(description="text", topic="Тема").to_dict()
     state.data["flow_id"] = "123"
     handler = NoteEditHandler(telegram)
 

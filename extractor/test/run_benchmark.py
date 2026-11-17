@@ -11,7 +11,7 @@ CONFIG_DIR = ROOT / "test" / "test_configs"
 RESULTS_DIR = ROOT / "test" / "results" / "quality_benchmark"
 sys.path.insert(0, str(ROOT))
 
-from app.extractor import ExtractionError, extract_text  # noqa: E402
+from app.extractor import FIELDS, ExtractionError, extract_text  # noqa: E402
 
 
 def main() -> int:
@@ -41,10 +41,10 @@ def main() -> int:
     output = RESULTS_DIR / "last-run.json"
     output.write_text(json.dumps(results, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     passed = sum(item["exact_expected_match"] for item in results)
-    field_total = len(results) * 6
+    field_total = len(results) * len(FIELDS)
     field_matches = sum(
         sum(item["actual"].get(field) == cases[index]["expected"].get(field)
-            for field in ("client", "problem", "product", "budget", "deadline", "next_step"))
+            for field in FIELDS)
         if isinstance(item["actual"], dict) else 0
         for index, item in enumerate(results)
     )
