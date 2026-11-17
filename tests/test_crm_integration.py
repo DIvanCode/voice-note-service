@@ -149,3 +149,61 @@ async def test_transport_errors_are_uncertain_and_not_retried():
     assert exc.value.code == "unknown_result"
     assert "sensitive" not in str(exc.value)
     assert len(calls) == 1
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "client_phone,client_name",
+    [
+        ("79990000000", "Тестовый Клиент"),
+        ("+7 (999) 000-00-00", "Иван Иванов"),  # only the name edited
+        ("79990000000", None),
+        ("+79990000000", "Другой клиент"),
+    ],
+)
+async def test_placeholder_phone_never_reaches_real_crm_after_name_edit(client_phone, client_name):
+    requests = []
+    def handler(request):
+        requests.append(request)
+        raise AssertionError("Synthetic number must not be sent to production")
+
+    service = CRMService(
+        "https://your-crm.example/client/add-note",
+        KEY,
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(CRMError) as exc:
+        await service.create_note(
+            Note(note="Обсудили просмотр", topic="Встреча", phone=client_phone, full_name=client_name),
+            user_phone=AGENT,
+        )
+    assert exc.value.code == "test_data"
+    assert "телефон" in exc.value.user_message
+    assert requests == []
+
+
+@pytest.mark.asyncio
+async def test_non_placeholder_phone_can_be_sent_to_real_crm():
+    sent = []
+    def handler(request):
+        sent.append(__import__("json").loads(request.content))
+        return httpx.Response(
+            201,
+            json={
+                "status": "success",
+                "agent": {"id": 123, "company_id": 456, "full_name": "Тестовый Агент"},
+                "client_id": 790,
+                "message": "Заметка добавлена!",
+            },
+        )
+
+    service = CRMService(
+        "https://your-crm.example/client/add-note",
+        KEY,
+        transport=httpx.MockTransport(handler),
+    )
+    await service.create_note(
+        Note(note="Обсудили просмотр", topic="Встреча", full_name="Иван Иванов", phone="+79997654321"),
+        user_phone=AGENT,
+    )
+    assert len(sent) == 1
+    assert sent[0]["client_phone"] == "79997654321"
