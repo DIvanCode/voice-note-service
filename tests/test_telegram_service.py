@@ -11,10 +11,13 @@ class FakeBot:
         self.messages = []
         self.edits = []
         self.actions = []
+        self.next_id = 500
 
     async def send_message(self, user_id, text, **kwargs):
         self.messages.append((user_id, text, kwargs))
-        return SimpleNamespace(message_id=500)
+        message_id = self.next_id
+        self.next_id += 1
+        return SimpleNamespace(message_id=message_id)
 
     async def send_chat_action(self, user_id, action):
         self.actions.append((user_id, action))
@@ -92,7 +95,7 @@ async def test_preview_without_lead_and_topic_has_no_confirmation():
 async def test_edit_menu_contains_all_six_fields_and_navigation():
     bot = FakeBot()
     service = TelegramService(bot)
-    await service.send_edit_menu(42, "100", 500)
+    await service.send_edit_menu(42, "100", 500, Note(lead="79990000000", topic="Тема"))
 
     cb = callbacks(bot.edits[0][3])
     assert cb == [
@@ -106,13 +109,42 @@ async def test_edit_menu_contains_all_six_fields_and_navigation():
 async def test_edit_prompt_and_return_are_edits_to_the_same_card():
     bot = FakeBot()
     service = TelegramService(bot)
-    await service.send_edit_prompt(42, "lead", "100", 500)
-    await service.send_edit_menu(42, "100", 500)
+    note = Note(lead="79990000000", topic="Тема")
+    await service.send_edit_prompt(42, "lead", "100", 500, note)
+    await service.send_edit_menu(42, "100", 500, note)
 
     assert len(bot.messages) == 0
     assert [edit[1] for edit in bot.edits] == [500, 500]
     assert "телефон клиента" in bot.edits[0][2]
+    assert "Тема:\nТема" in bot.edits[0][2]
     assert callbacks(bot.edits[0][3]) == ["note:edit:100", "note:cancel:100"]
+
+
+@pytest.mark.asyncio
+async def test_corrected_note_gets_new_message_and_previous_version_has_no_actions():
+    bot = FakeBot()
+    service = TelegramService(bot)
+    assert await service.send_processing(42) == 500
+    previous = Note(lead="79990000000", topic="Старая тема", description="До правки")
+    corrected = Note(lead="79990000000", topic="Новая тема", description="До правки")
+    await service.send_note_preview(42, previous, "100", 500)
+    new_id = await service.send_revised_note_preview(
+        42, corrected, "100", 500, previous,
+    )
+
+    assert new_id == 501
+    assert len(bot.messages) == 2
+    assert len(bot.edits) == 2
+    assert bot.edits[0][3] is not None
+    assert bot.edits[1][1] == 500
+    assert bot.edits[1][3] is None
+    assert "Предыдущая версия заметки:" in bot.edits[1][2]
+    assert "Старая тема" in bot.edits[1][2]
+    assert "Новая тема" not in bot.edits[1][2]
+    assert "Новая тема" in bot.messages[1][1]
+    assert callbacks(bot.messages[1][2]["reply_markup"]) == [
+        "note:confirm:100", "note:edit:100", "note:cancel:100",
+    ]
 
 
 @pytest.mark.asyncio
