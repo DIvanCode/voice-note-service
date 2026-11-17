@@ -84,7 +84,7 @@ async def test_dashboard_escapes_html(app):
 
 
 @pytest.mark.asyncio
-async def test_six_fields_sent_to_crm_and_successful_http_500_accepted():
+async def test_descriptive_fields_sent_to_crm_and_successful_http_500_accepted():
     calls = []
 
     def handler(request):
@@ -93,7 +93,7 @@ async def test_six_fields_sent_to_crm_and_successful_http_500_accepted():
         payload = json.loads(request.content)
         assert payload == {
             "key": KEY,
-            "note": "Лид: +79990000000\n\nТема: Встреча\n\nОписание: Текст\n\nСледующий шаг: Позвонить\n\nСрок: Завтра\n\nДополнительная информация: Договор",
+            "note": "Тема: Встреча\n\nОписание: Текст\n\nСледующий шаг: Позвонить\n\nСрок: Завтра\n\nДополнительная информация: Договор",
             "user_phone": AGENT,
             "client_phone": CLIENT,
         }
@@ -146,7 +146,7 @@ async def test_http_client_to_mock_end_to_end(app):
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://mock-crm") as client:
         resp = await client.get("/api/notes", auth=("viewer", VIEW))
     assert len(resp.json()["notes"]) == 1
-    assert "Лид: 79990000000" in resp.json()["notes"][0]["note"]
+    assert "Лид:" not in resp.json()["notes"][0]["note"]
     assert "Тема: Сделка" in resp.json()["notes"][0]["note"]
     assert "Описание: Обсудили цену" in resp.json()["notes"][0]["note"]
 
@@ -240,7 +240,7 @@ async def test_notes_ui_escapes_client_and_agent_names_from_fixtures():
 
 
 @pytest.mark.asyncio
-async def test_only_filled_agent_fields_are_included_in_crm_note(app):
+async def test_only_filled_descriptive_fields_are_included_without_lead(app):
     crm = CRMService("http://mock-crm:8000/client/add-note", KEY, transport=ASGITransport(app=app))
     await crm.create_note(
         Note(lead="+" + CLIENT, topic="Встреча", description="  Показ квартиры  ", next_step=None,
@@ -250,10 +250,12 @@ async def test_only_filled_agent_fields_are_included_in_crm_note(app):
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://mock-crm") as client:
         data = (await client.get("/api/notes", auth=("viewer", VIEW))).json()
         note_text = data["notes"][0]["note"]
-        assert note_text == ("Лид: +" + CLIENT + "\n\nТема: Встреча"
+        assert note_text == ("Тема: Встреча"
                              + "\n\nОписание: Показ квартиры"
                              + "\n\nДополнительная информация: Нужна парковка")
         page = await client.get("/notes", auth=("viewer", VIEW))
+        assert data["notes"][0]["client_id"] == 789
+        assert "Лид:" not in note_text
         assert "Дополнительная информация: Нужна парковка" in page.text
         assert "Следующий шаг:" not in page.text
         assert "Срок:" not in page.text
