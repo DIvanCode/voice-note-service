@@ -21,13 +21,15 @@ class NoteEditHandler:
 
         await state.set_state(NoteState.EDITING.value)
         await state.update_data(editing_field=None)
-        await self.telegram.send_edit_menu(user_id, data["flow_id"], data["ui_message_id"])
+        await self.telegram.send_edit_menu(
+            user_id, data["flow_id"], data["ui_message_id"], Note.from_dict(data["note"]),
+        )
 
     async def select_field(self, user_id: int, field: str, state: Any) -> None:
         data = await state.get_data()
         if field not in EDITABLE_FIELDS:
             await self.telegram.send_edit_menu(
-                user_id, data["flow_id"], data["ui_message_id"],
+                user_id, data["flow_id"], data["ui_message_id"], Note.from_dict(data["note"]),
                 notice="Неизвестное поле для редактирования.",
             )
             return
@@ -35,7 +37,7 @@ class NoteEditHandler:
         await state.set_state(NoteState.EDITING.value)
         await state.update_data(editing_field=field)
         await self.telegram.send_edit_prompt(
-            user_id, field, data["flow_id"], data["ui_message_id"],
+            user_id, field, data["flow_id"], data["ui_message_id"], Note.from_dict(data["note"]),
         )
 
     async def show_preview(self, user_id: int, state: Any) -> None:
@@ -66,18 +68,27 @@ class NoteEditHandler:
 
         if field not in EDITABLE_FIELDS:
             await self.telegram.send_edit_menu(
-                user_id, flow_id, card_id,
+                user_id, flow_id, card_id, Note.from_dict(note_data),
                 notice="Выберите поле, которое хотите исправить.",
             )
             return
 
+        previous_note = Note.from_dict(note_data)
         value = edited_text.strip()
-        note_data[field] = None if not value or value == "-" else value
-        note = Note.from_dict(note_data)
+        updated_data = dict(note_data)
+        updated_data[field] = None if not value or value == "-" else value
+        note = Note.from_dict(updated_data)
 
-        await state.update_data(note=note.to_dict(), editing_field=None)
+        # Replace the active card only after the old keyboard is removed
+        # and the new message has been created successfully. If Telegram
+        # fails, keep EDITING and the original draft so input can be retried.
+        new_card_id = await self.telegram.send_revised_note_preview(
+            user_id, note, flow_id, card_id, previous_note,
+        )
+        await state.update_data(
+            note=note.to_dict(), editing_field=None, ui_message_id=new_card_id,
+        )
         await state.set_state(NoteState.PREVIEW.value)
-        await self.telegram.send_note_preview(user_id, note, flow_id, card_id)
 
     async def cancel(self, user_id: int, state: Any) -> None:
         data = await state.get_data()
