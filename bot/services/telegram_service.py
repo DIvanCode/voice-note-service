@@ -64,12 +64,15 @@ class TelegramService:
                 raise
 
     @staticmethod
-    def _preview_text(note: Note, *, show_hints: bool = True) -> str:
+    def _preview_text(
+        note: Note, *, show_hints: bool = True,
+        heading: str = "Проверьте заметку перед отправкой:",
+    ) -> str:
         field_lines = [
             f"{label}:\n{TelegramService._preview_value(getattr(note, field), PREVIEW_DESCRIPTION_LIMIT if field == 'description' else PREVIEW_FIELD_LIMIT)}"
             for field, label in FIELD_LABELS.items()
         ]
-        text = "Проверьте заметку перед отправкой:\n\n" + "\n\n".join(field_lines)
+        text = heading + "\n\n" + "\n\n".join(field_lines)
         if show_hints and note.missing_required_fields:
             labels = ", ".join(FIELD_LABELS[field] for field in note.missing_required_fields)
             text += f"\n\nЧтобы отправить заметку в CRM, добавьте: {labels}. Для CRM нужен телефон клиента в поле «Лид»."
@@ -141,7 +144,7 @@ class TelegramService:
     async def send_success(self, user_id: int, message_id: int, note: Note) -> None:
         await self._edit_card(
             user_id, message_id,
-            "✅ Заметка сохранена в CRM.\n\n" + self._preview_text(note, show_hints=False),
+            self._preview_text(note, show_hints=False, heading="✅ Заметка сохранена в CRM."),
         )
 
     async def send_error(self, user_id: int, message: str, message_id: int | None = None) -> None:
