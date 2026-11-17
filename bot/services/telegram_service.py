@@ -108,7 +108,8 @@ class TelegramService:
         return buttons
 
     async def send_edit_menu(
-        self, user_id: int, flow_id: str, message_id: int, *, notice: str | None = None,
+        self, user_id: int, flow_id: str, message_id: int, note: Note,
+        *, notice: str | None = None,
     ) -> None:
         buttons = [
             [InlineKeyboardButton(text=label, callback_data=f"note:field:{flow_id}:{field}")]
@@ -116,13 +117,13 @@ class TelegramService:
         ]
         buttons.append([InlineKeyboardButton(text="← К заметке", callback_data=f"note:preview:{flow_id}")])
         buttons.append([InlineKeyboardButton(text="Отменить заметку", callback_data=f"note:cancel:{flow_id}")])
-        text = "Что хотите изменить?"
+        text = self._preview_text(note, show_hints=False) + "\n\n✏️ Что хотите изменить?"
         if notice:
             text = notice + "\n\n" + text
         await self._edit_card(user_id, message_id, text, buttons)
 
     async def send_edit_prompt(
-        self, user_id: int, field: str, flow_id: str, message_id: int,
+        self, user_id: int, field: str, flow_id: str, message_id: int, note: Note,
         *, notice: str | None = None,
     ) -> None:
         hint = " Укажите телефон клиента для поиска в CRM." if field == "lead" else ""
@@ -130,12 +131,40 @@ class TelegramService:
             f"Напишите новое значение для поля «{FIELD_LABELS[field]}».{hint} "
             "Если хотите очистить поле, отправьте «-»."
         )
+        text = self._preview_text(note, show_hints=False) + "\n\n✏️ " + text
         if notice:
             text = notice + "\n\n" + text
         await self._edit_card(user_id, message_id, text, [
             [InlineKeyboardButton(text="← Выбрать другое поле", callback_data=f"note:edit:{flow_id}")],
             [InlineKeyboardButton(text="Отменить заметку", callback_data=f"note:cancel:{flow_id}")],
         ])
+
+    async def send_revised_note_preview(
+        self,
+        user_id: int,
+        note: Note,
+        flow_id: str,
+        previous_message_id: int,
+        previous_note: Note,
+    ) -> int:
+        """Keep the previous note as history without actions; send an updated card."""
+        # First remove the old actions so that only the new revision can be
+        # confirmed. Preserve the original fields instead of leaving an edit prompt.
+        await self._edit_card(
+            user_id,
+            previous_message_id,
+            self._preview_text(
+                previous_note, show_hints=False, heading="Предыдущая версия заметки:"
+            ),
+        )
+        sent = await self.bot.send_message(
+            user_id,
+            self._preview_text(note),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=self._action_buttons(flow_id, note.can_be_sent_to_crm)
+            ),
+        )
+        return sent.message_id
 
     async def send_saving(self, user_id: int, message_id: int) -> None:
         # Disable the submit button while the CRM request is in flight.
