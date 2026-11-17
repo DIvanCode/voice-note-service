@@ -46,6 +46,12 @@ python -m bot.main
 ```bash
 mkdir -p data
 docker compose up -d --build
+ 
+# Для существующего тома Whisper со старыми правами root — ОДИН РАЗ
+# (не требуется для нового развёртывания):
+# docker compose stop bot
+# docker compose --profile maintenance run --rm --no-deps whisper-cache-migrate
+# docker compose up -d --build bot
 docker compose logs -f bot
 ```
 
