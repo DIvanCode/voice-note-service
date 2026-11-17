@@ -29,7 +29,12 @@ class NoteEditHandler:
         if data.get("note") is None or data.get("flow_id") is None:
             await state.clear()
             await self._remove_prompt(user_id, data.get("edit_prompt_message_id"))
-            await self.telegram.send_error(user_id, "Активная заметка не найдена.", data.get("ui_message_id"))
+            try:
+                await self.telegram.send_error(
+                    user_id, "Активная заметка не найдена.", data.get("ui_message_id"),
+                )
+            finally:
+                await self.telegram.send_next_note_prompt(user_id)
             return
 
         await self.telegram.send_edit_menu(
@@ -59,7 +64,12 @@ class NoteEditHandler:
         if note_data is None or data.get("flow_id") is None:
             await state.clear()
             await self._remove_prompt(user_id, data.get("edit_prompt_message_id"))
-            await self.telegram.send_error(user_id, "Активная заметка не найдена.", data.get("ui_message_id"))
+            try:
+                await self.telegram.send_error(
+                    user_id, "Активная заметка не найдена.", data.get("ui_message_id"),
+                )
+            finally:
+                await self.telegram.send_next_note_prompt(user_id)
             return
 
         await self.telegram.send_note_preview(
@@ -80,7 +90,12 @@ class NoteEditHandler:
         if note_data is None or flow_id is None:
             await state.clear()
             await self._remove_prompt(user_id, prompt_id)
-            await self.telegram.send_error(user_id, "Активная заметка не найдена.", card_id)
+            try:
+                await self.telegram.send_error(
+                    user_id, "Активная заметка не найдена.", card_id,
+                )
+            finally:
+                await self.telegram.send_next_note_prompt(user_id)
             return
 
         if field not in EDITABLE_FIELDS:
