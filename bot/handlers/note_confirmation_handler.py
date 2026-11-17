@@ -30,9 +30,12 @@ class NoteConfirmationHandler:
         note_data = data.get("note")
         if note_data is None:
             await state.clear()
-            await self.telegram.send_error(
-                user_id, "Активная заметка не найдена.", data.get("ui_message_id"),
-            )
+            try:
+                await self.telegram.send_error(
+                    user_id, "Активная заметка не найдена.", data.get("ui_message_id"),
+                )
+            finally:
+                await self.telegram.send_next_note_prompt(user_id)
             return
 
         note = Note.from_dict(note_data)
@@ -65,12 +68,14 @@ class NoteConfirmationHandler:
                 await self.crm.create_note(note, user_phone=self.user_phones[user_id])
         except CRMNotConfiguredError:
             await state.clear()
-            await self.telegram.send_error(
-                user_id,
-                "Сейчас я ещё не могу отправлять заметки в CRM. Эту заметку не сохранил и закрыл. "
-                "Можете отправить новое голосовое.",
-                data.get("ui_message_id"),
-            )
+            try:
+                await self.telegram.send_error(
+                    user_id,
+                    "Сейчас я ещё не могу отправлять заметки в CRM. Эту заметку не сохранил и закрыл.",
+                    data.get("ui_message_id"),
+                )
+            finally:
+                await self.telegram.send_next_note_prompt(user_id)
             return
         except CRMError as exc:
             logger.warning("CRM rejected note (%s)", exc.code)
@@ -91,3 +96,4 @@ class NoteConfirmationHandler:
             await self.telegram.send_success(user_id, data["ui_message_id"], note)
         except Exception as exc:
             logger.warning("Could not update saved note card (%s)", type(exc).__name__)
+        await self.telegram.send_next_note_prompt(user_id)
