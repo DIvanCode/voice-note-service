@@ -86,7 +86,10 @@ async def test_second_voice_while_editing_keeps_same_card():
     telegram = FakeTelegram()
     state = FakeState()
     state.state = NoteState.EDITING.value
-    state.data.update(flow_id="77", ui_message_id=500, editing_field="topic")
+    state.data.update(
+        flow_id="77", ui_message_id=500, editing_field="topic",
+        note=Note(lead="79990000000", topic="Встреча").to_dict(),
+    )
 
     await VoiceHandler(telegram, STT(), Extraction()).handle_voice(FakeMessage(), state)
 
