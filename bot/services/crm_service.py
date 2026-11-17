@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from bot.models.note import Note
+from bot.models.note import FIELD_LABELS, Note
 
 MAX_RESPONSE_BYTES = 16_384
 MAX_NOTE_CHARS = 10_000
@@ -33,8 +33,8 @@ class CRMError(RuntimeError):
             "bad_key": "Ошибка авторизации CRM. Обратитесь к администратору.",
             "no_key": "Ошибка авторизации CRM. Обратитесь к администратору.",
             "empty_note": "CRM отклонила пустую заметку. Проверьте текст.",
-            "niether_phone_nor_address": "Для сохранения нужен телефон клиента.",
-            "not_implemented": "CRM пока не поддерживает поиск клиента по адресу.",
+            "niether_phone_nor_address": "Для сохранения нужен телефон клиента в поле «Лид».",
+            "not_implemented": "CRM пока не умеет искать клиента по адресу. Укажите телефон клиента в поле «Лид».",
             "invalid_request": "CRM отклонила данные. Проверьте номер и текст заметки.",
             "test_data": "В заметке остался тестовый номер клиента. Укажите настоящий телефон перед отправкой в CRM.",
         }
@@ -109,16 +109,24 @@ class CRMService:
     async def create_note(self, note: Note, *, user_phone: str | None = None) -> None:
         if not self._url or not self._api_key or not _phone(user_phone):
             raise CRMNotConfiguredError("CRM connection or authorized employee is not configured")
-        if not note.can_be_sent_to_crm or not note.note.strip():
-            raise CRMError("empty_note")
-        client_phone = _phone(note.phone)
+        if not note.can_be_sent_to_crm:
+            raise CRMError("invalid_request")
+        # Master accepts a phone or an address as lead. This CRM endpoint
+        # only resolves a client by phone; do not guess using an address.
+        client_phone = _phone(note.lead)
         if not client_phone:
-            raise CRMError("niether_phone_nor_address")
-        # CRM chooses clients solely by phone. Changing the extracted name
-        # does not make a synthetic placeholder phone safe for production.
+            raise CRMError("not_implemented")
+        # Synthetic fixture numbers are for mock CRM only.
         if urlsplit(self._url).scheme == "https" and client_phone == "79990000000":
             raise CRMError("test_data")
-        body = f"Тема: {note.topic.strip()}\n\n{note.note.strip()}"
+
+        # Include all filled note fields except the lead used for matching.
+        body = "\n\n".join(
+            f"{FIELD_LABELS[field]}: {value.strip()}"
+            for field in FIELD_LABELS
+            if field != "lead"
+            if isinstance(value := getattr(note, field), str) and value.strip()
+        )
         if len(body) > MAX_NOTE_CHARS:
             raise CRMError("invalid_request")
 
