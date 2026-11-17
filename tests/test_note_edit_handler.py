@@ -93,7 +93,7 @@ async def test_cancel_clears_active_note_and_removes_buttons():
 
     assert state.state is None
     assert state.data == {}
-    assert telegram.calls == [("cancelled", 500)]
+    assert telegram.calls == [("cancelled", 500), ("next_note", 1)]
 
 
 @pytest.mark.asyncio
@@ -186,8 +186,8 @@ async def test_cancel_during_field_edit_deletes_prompt_and_buttons():
     await handler.select_field(1, "topic", state)
     await handler.cancel(1, state)
 
-    assert telegram.calls[-2:] == [
-        ("delete_prompt", 600), ("cancelled", 500),
+    assert telegram.calls[-3:] == [
+        ("delete_prompt", 600), ("cancelled", 500), ("next_note", 1),
     ]
     assert state.data == {}
 
