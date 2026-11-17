@@ -20,6 +20,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 MAX_REQUEST_BYTES = 32_768
 MAX_NOTE_CHARS = 10_000
+MAX_STORED_NOTES = 1_000
 basic = HTTPBasic(auto_error=False)
 
 
@@ -96,7 +97,11 @@ def create_app(
     async def add_note(request: Request):
         if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
             return _error(415, "invalid_request", "Ожидается application/json")
-        if int(request.headers.get("content-length") or 0) > MAX_REQUEST_BYTES:
+        try:
+            content_length = int(request.headers.get("content-length") or 0)
+        except ValueError:
+            return _error(400, "invalid_request", "Некорректный Content-Length")
+        if content_length > MAX_REQUEST_BYTES:
             return _error(413, "invalid_request", "Слишком большой запрос")
 
         body = bytearray()
@@ -145,6 +150,8 @@ def create_app(
         if len(matches) > 1:
             return _error(409, "redundant_client_by_phone", "Найдено более одного клиента с таким телефоном")
 
+        if len(notes) >= MAX_STORED_NOTES:
+            return _error(507, "storage_full", "Тестовое хранилище заметок заполнено")
         client = matches[0]
         notes.append({
             "id": len(notes) + 1,

@@ -129,7 +129,7 @@ async def main() -> None:
 
     # Explicit mapping prevents an unknown Telegram account from impersonating
     # an employee using a shared CRM API key.
-    agent_bindings = parse_agent_bindings(os.getenv("CRM_AGENT_BINDINGS", "{}"))
+    agent_bindings = parse_agent_bindings(os.getenv("CRM_AGENT_BINDINGS") or "{}")
     if not agent_bindings:
         logging.warning("No CRM_AGENT_BINDINGS configured: bot denies all users")
 
