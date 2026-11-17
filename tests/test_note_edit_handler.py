@@ -26,14 +26,16 @@ async def test_edit_sends_new_corrected_card_and_preserves_previous_without_butt
     assert state.state == NoteState.PREVIEW.value
     assert state.data["note"]["topic"] == "Покупка квартиры"
     assert [call[0] for call in telegram.calls] == [
-        "edit_menu", "edit_prompt", "revised_preview",
+        "edit_menu", "edit_prompt", "revised_preview", "delete_prompt",
     ]
     assert telegram.calls[0][2] == 500
-    assert telegram.calls[1][3] == 500
+    assert telegram.calls[1] == ("edit_prompt", "topic", 600)
     assert telegram.calls[2][3] == 500  # previous card
     assert telegram.calls[2][4] == 501  # new corrected card
     assert telegram.calls[2][5].topic is None
+    assert telegram.calls[3] == ("delete_prompt", 600)
     assert state.data["ui_message_id"] == 501
+    assert state.data["edit_prompt_message_id"] is None
 
 
 @pytest.mark.asyncio
@@ -42,13 +44,15 @@ async def test_optional_field_can_be_cleared_with_dash():
     state = draft(Note(description="text", next_step="Позвонить", topic="Тема"))
     state.state = NoteState.EDITING.value
     state.data["editing_field"] = "next_step"
+    state.data["edit_prompt_message_id"] = 600
     handler = NoteEditHandler(telegram)
 
     await handler.save_edit(1, "-", state)
 
     assert state.data["note"]["next_step"] is None
-    assert telegram.calls[-1][0] == "revised_preview"
-    assert telegram.calls[-1][3] == 500
+    assert telegram.calls[-2][0] == "revised_preview"
+    assert telegram.calls[-2][3] == 500
+    assert telegram.calls[-1] == ("delete_prompt", 600)
     assert state.data["ui_message_id"] == 501
 
 
@@ -133,3 +137,75 @@ async def test_failed_new_message_keeps_original_draft_editable():
     assert state.data["note"]["topic"] == "Старая тема"
     assert state.data["editing_field"] == "topic"
     assert state.data["ui_message_id"] == 500
+    assert state.data["edit_prompt_message_id"] == 600
+
+
+@pytest.mark.asyncio
+async def test_switch_field_replaces_old_temporary_prompt():
+    telegram = FakeTelegram()
+    state = draft(Note(lead="79990000000", topic="Тема"))
+    handler = NoteEditHandler(telegram)
+
+    await handler.start_edit(1, state)
+    await handler.select_field(1, "topic", state)
+    await handler.select_field(1, "description", state)
+
+    assert [c for c in telegram.calls if c[0] == "edit_prompt"] == [
+        ("edit_prompt", "topic", 600),
+        ("edit_prompt", "description", 601),
+    ]
+    assert telegram.calls[-1] == ("delete_prompt", 600)
+    assert state.data["editing_field"] == "description"
+    assert state.data["edit_prompt_message_id"] == 601
+
+
+@pytest.mark.asyncio
+async def test_back_from_edit_deletes_temporary_prompt():
+    telegram = FakeTelegram()
+    state = draft(Note(lead="79990000000", topic="Тема"))
+    handler = NoteEditHandler(telegram)
+
+    await handler.start_edit(1, state)
+    await handler.select_field(1, "topic", state)
+    await handler.show_preview(1, state)
+
+    assert [c[0] for c in telegram.calls] == [
+        "edit_menu", "edit_prompt", "preview", "delete_prompt",
+    ]
+    assert telegram.calls[-1] == ("delete_prompt", 600)
+    assert state.data["edit_prompt_message_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_cancel_during_field_edit_deletes_prompt_and_buttons():
+    telegram = FakeTelegram()
+    state = draft(Note(lead="79990000000", topic="Тема"))
+    handler = NoteEditHandler(telegram)
+
+    await handler.start_edit(1, state)
+    await handler.select_field(1, "topic", state)
+    await handler.cancel(1, state)
+
+    assert telegram.calls[-2:] == [
+        ("delete_prompt", 600), ("cancelled", 500),
+    ]
+    assert state.data == {}
+
+
+@pytest.mark.asyncio
+async def test_delete_failure_does_not_lose_saved_correction():
+    class BrokenTelegram(FakeTelegram):
+        async def delete_edit_prompt(self, user_id, message_id):
+            raise RuntimeError("Delete not available")
+
+    telegram = BrokenTelegram()
+    state = draft(Note(lead="79990000000", topic="Старая тема"))
+    handler = NoteEditHandler(telegram)
+    await handler.start_edit(1, state)
+    await handler.select_field(1, "topic", state)
+    await handler.save_edit(1, "Новая тема", state)
+
+    assert state.state == NoteState.PREVIEW.value
+    assert state.data["note"]["topic"] == "Новая тема"
+    assert state.data["edit_prompt_message_id"] is None
+    assert state.data["ui_message_id"] == 501
