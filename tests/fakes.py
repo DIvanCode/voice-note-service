@@ -39,31 +39,33 @@ class FakeTelegram:
     def __init__(self, audio: bytes = b"voice"):
         self.audio = audio
         self.calls = []
+        self.card_id = 500
 
     async def download_voice(self, message):
         self.calls.append(("download", None))
         return self.audio
 
-    async def send_note_preview(self, user_id, note, flow_id):
-        self.calls.append(("preview", note, flow_id))
+    async def send_processing(self, user_id):
+        self.calls.append(("processing", user_id))
+        return self.card_id
 
-    async def send_success(self, user_id):
-        self.calls.append(("success", None))
+    async def send_note_preview(self, user_id, note, flow_id, message_id, *, notice=None):
+        self.calls.append(("preview", note, flow_id, message_id, notice))
 
-    async def send_error(self, user_id, message):
-        self.calls.append(("error", message))
+    async def send_success(self, user_id, message_id, note):
+        self.calls.append(("success", message_id, note))
 
-    async def send_busy(self, user_id, flow_id, with_actions=True, can_confirm=False):
-        self.calls.append(("busy", with_actions, flow_id, can_confirm))
+    async def send_saving(self, user_id, message_id):
+        self.calls.append(("saving", message_id))
 
-    async def send_required_fields(self, user_id, fields):
-        self.calls.append(("required_fields", fields))
+    async def send_error(self, user_id, message, message_id=None):
+        self.calls.append(("error", message, message_id))
 
-    async def send_edit_menu(self, user_id, flow_id):
-        self.calls.append(("edit_menu", flow_id))
+    async def send_edit_menu(self, user_id, flow_id, message_id, *, notice=None):
+        self.calls.append(("edit_menu", flow_id, message_id, notice))
 
-    async def send_edit_prompt(self, user_id, field):
-        self.calls.append(("edit_prompt", field))
+    async def send_edit_prompt(self, user_id, field, flow_id, message_id, *, notice=None):
+        self.calls.append(("edit_prompt", field, flow_id, message_id, notice))
 
-    async def send_cancelled(self, user_id):
-        self.calls.append(("cancelled", None))
+    async def send_cancelled(self, user_id, message_id):
+        self.calls.append(("cancelled", message_id))
