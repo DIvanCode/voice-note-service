@@ -40,6 +40,7 @@ class FakeTelegram:
         self.audio = audio
         self.calls = []
         self.card_id = 500
+        self.prompt_id = 600
 
     async def download_voice(self, message):
         self.calls.append(("download", None))
@@ -64,8 +65,14 @@ class FakeTelegram:
     async def send_edit_menu(self, user_id, flow_id, message_id, note, *, notice=None):
         self.calls.append(("edit_menu", flow_id, message_id, notice, note))
 
-    async def send_edit_prompt(self, user_id, field, flow_id, message_id, note, *, notice=None):
-        self.calls.append(("edit_prompt", field, flow_id, message_id, notice, note))
+    async def send_edit_prompt(self, user_id, field):
+        prompt_id = self.prompt_id
+        self.prompt_id += 1
+        self.calls.append(("edit_prompt", field, prompt_id))
+        return prompt_id
+
+    async def delete_edit_prompt(self, user_id, message_id):
+        self.calls.append(("delete_prompt", message_id))
 
     async def send_revised_note_preview(
         self, user_id, note, flow_id, previous_message_id, previous_note,
