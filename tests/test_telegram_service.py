@@ -12,6 +12,7 @@ class FakeBot:
         self.edits = []
         self.actions = []
         self.next_id = 500
+        self.deleted = []
 
     async def send_message(self, user_id, text, **kwargs):
         self.messages.append((user_id, text, kwargs))
@@ -24,6 +25,10 @@ class FakeBot:
 
     async def edit_message_text(self, *, chat_id, message_id, text, reply_markup=None):
         self.edits.append((chat_id, message_id, text, reply_markup))
+        return True
+
+    async def delete_message(self, *, chat_id, message_id):
+        self.deleted.append((chat_id, message_id))
         return True
 
 
@@ -106,18 +111,32 @@ async def test_edit_menu_contains_all_six_fields_and_navigation():
 
 
 @pytest.mark.asyncio
-async def test_edit_prompt_and_return_are_edits_to_the_same_card():
+async def test_edit_prompt_is_separate_temporary_message_and_can_be_deleted():
     bot = FakeBot()
     service = TelegramService(bot)
-    note = Note(lead="79990000000", topic="Тема")
-    await service.send_edit_prompt(42, "lead", "100", 500, note)
-    await service.send_edit_menu(42, "100", 500, note)
+    await service.send_edit_menu(42, "100", 500, Note(lead="79990000000", topic="Тема"))
+    prompt_id = await service.send_edit_prompt(42, "lead")
 
-    assert len(bot.messages) == 0
-    assert [edit[1] for edit in bot.edits] == [500, 500]
-    assert "телефон клиента" in bot.edits[0][2]
+    assert prompt_id == 500
+    assert len(bot.messages) == 1
+    assert "Редактируем поле «Лид»" in bot.messages[0][1]
+    assert "телефон клиента" in bot.messages[0][1]
+    assert len(bot.edits) == 1
     assert "Тема:\nТема" in bot.edits[0][2]
-    assert callbacks(bot.edits[0][3]) == ["note:edit:100", "note:cancel:100"]
+
+    await service.delete_edit_prompt(42, prompt_id)
+    assert bot.deleted == [(42, 500)]
+
+
+@pytest.mark.asyncio
+async def test_next_note_prompt_is_separate_not_a_welcome_repeat():
+    bot = FakeBot()
+    await TelegramService(bot).send_next_note_prompt(42)
+
+    assert len(bot.messages) == 1
+    assert "следующей заметке" in bot.messages[0][1]
+    assert "Привет" not in bot.messages[0][1]
+    assert bot.messages[0][2] == {}
 
 
 @pytest.mark.asyncio
