@@ -61,11 +61,20 @@ class FakeTelegram:
     async def send_error(self, user_id, message, message_id=None):
         self.calls.append(("error", message, message_id))
 
-    async def send_edit_menu(self, user_id, flow_id, message_id, *, notice=None):
-        self.calls.append(("edit_menu", flow_id, message_id, notice))
+    async def send_edit_menu(self, user_id, flow_id, message_id, note, *, notice=None):
+        self.calls.append(("edit_menu", flow_id, message_id, notice, note))
 
-    async def send_edit_prompt(self, user_id, field, flow_id, message_id, *, notice=None):
-        self.calls.append(("edit_prompt", field, flow_id, message_id, notice))
+    async def send_edit_prompt(self, user_id, field, flow_id, message_id, note, *, notice=None):
+        self.calls.append(("edit_prompt", field, flow_id, message_id, notice, note))
+
+    async def send_revised_note_preview(
+        self, user_id, note, flow_id, previous_message_id, previous_note,
+    ):
+        self.card_id += 1
+        self.calls.append((
+            "revised_preview", note, flow_id, previous_message_id, self.card_id, previous_note,
+        ))
+        return self.card_id
 
     async def send_cancelled(self, user_id, message_id):
         self.calls.append(("cancelled", message_id))
