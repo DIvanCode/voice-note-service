@@ -35,7 +35,7 @@ class TelegramService:
         )
 
     async def send_processing(self, user_id: int) -> int:
-        """Create the only bot-owned message for the lifetime of this note."""
+        """Create a processing message that becomes the first note preview."""
         await self.bot.send_chat_action(user_id, "typing")
         sent = await self.bot.send_message(
             user_id,
