@@ -34,6 +34,15 @@ class TelegramService:
             "Любое поле можно исправить перед подтверждением.",
         )
 
+    async def send_next_note_prompt(self, user_id: int) -> None:
+        """Invite the user to start another note after the current one closes."""
+        await self.bot.send_message(
+            user_id,
+            "🎙️ Готов к следующей заметке!\n"
+            "Отправьте голосовое сообщение об итогах новой встречи. "
+            "Я расшифрую его, подготовлю заметку и дам проверить её перед отправкой в CRM.",
+        )
+
     async def send_processing(self, user_id: int) -> int:
         """Create a processing message that becomes the first note preview."""
         await self.bot.send_chat_action(user_id, "typing")
