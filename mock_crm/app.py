@@ -41,6 +41,13 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
     )
 
 
+def _display_date(iso_timestamp: str) -> str:
+    """Format a UTC timestamp for the Russian-language notes dashboard."""
+    return datetime.fromisoformat(iso_timestamp).astimezone(timezone.utc).strftime(
+        "%d.%m.%Y, %H:%M UTC"
+    )
+
+
 def create_app(
     *,
     api_key: str | None = None,
@@ -157,6 +164,8 @@ def create_app(
             "id": len(notes) + 1,
             "client_id": client["id"],
             "agent_id": agent["id"],
+            "client_full_name": client["full_name"],
+            "agent_full_name": agent["full_name"],
             "note": note.strip(),
             "type": "public",
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -178,8 +187,8 @@ def create_app(
         rows = "".join(
             "<tr>"
             + "".join(f"<td>{html.escape(str(value))}</td>" for value in (
-                note["id"], note["created_at"], note["client_id"],
-                note["agent_id"], note["type"], note["note"],
+                note["id"], _display_date(note["created_at"]),
+                note["client_full_name"], note["agent_full_name"], note["note"],
             ))
             + "</tr>" for note in reversed(notes)
         )
@@ -193,8 +202,8 @@ def create_app(
             'th{background:#f3f4f6}</style></head><body>'
             '<h1>Mock CRM · созданные заметки</h1>'
             '<p>Синтетическая тестовая среда. Заметки хранятся только в памяти контейнера.</p>'
-            '<table><thead><tr><th>ID</th><th>Создана (UTC)</th><th>Клиент</th>'
-            '<th>Агент</th><th>Тип</th><th>Заметка</th></tr></thead><tbody>'
+            '<table><thead><tr><th>№</th><th>Дата создания</th><th>Клиент</th>'
+            '<th>Агент</th><th>Заметка</th></tr></thead><tbody>'
             + rows + '</tbody></table></body></html>'
         )
 
