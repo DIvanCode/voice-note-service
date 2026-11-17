@@ -65,8 +65,9 @@ async def test_processing_failure_edits_processing_card_to_error():
 
     assert state.state is None
     assert state.data == {}
-    assert [call[0] for call in telegram.calls] == ["processing", "download", "error"]
-    assert telegram.calls[-1][2] == 500
+    assert [call[0] for call in telegram.calls] == ["processing", "download", "error", "next_note"]
+    assert telegram.calls[-2][2] == 500
+    assert telegram.calls[-1] == ("next_note", 1)
 
 
 @pytest.mark.asyncio
@@ -93,6 +94,6 @@ async def test_second_voice_while_editing_keeps_same_card():
 
     await VoiceHandler(telegram, STT(), Extraction()).handle_voice(FakeMessage(), state)
 
-    assert telegram.calls[0][0] == "edit_prompt"
-    assert telegram.calls[0][3] == 500
-    assert "Сначала завершите" in telegram.calls[0][4]
+    assert telegram.calls[0][0] == "edit_menu"
+    assert telegram.calls[0][2] == 500
+    assert "Сначала завершите" in telegram.calls[0][3]
