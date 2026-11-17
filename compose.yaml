@@ -45,6 +45,22 @@ services:
     expose:
       - "8000"
 
+  # One-shot, opt-in migration for Whisper cache owned by the old root image.
+  # Runs without network or credentials and has only CAP_CHOWN.
+  whisper-cache-migrate:
+    profiles: [maintenance]
+    image: python:3.12-slim-bookworm
+    user: "0:0"
+    entrypoint: ["chown", "-R", "10001:10001", "/cache"]
+    restart: "no"
+    network_mode: "none"
+    read_only: true
+    volumes:
+      - whisper_cache:/cache
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+
   llama:
     build:
       context: ./extractor
