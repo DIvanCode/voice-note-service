@@ -6,13 +6,17 @@ from bot.states.note_states import NoteState
 from tests.fakes import FakeState, FakeTelegram
 
 
-@pytest.mark.asyncio
-async def test_edit_allows_topic_change_and_returns_to_preview():
-    telegram = FakeTelegram()
+def draft(note):
     state = FakeState()
     state.state = NoteState.PREVIEW.value
-    state.data["note"] = Note(description="text", lead="ул. Лесная, 1").to_dict()
-    state.data["flow_id"] = "123"
+    state.data.update(note=note.to_dict(), flow_id="123", ui_message_id=500)
+    return state
+
+
+@pytest.mark.asyncio
+async def test_edit_allows_topic_change_and_updates_original_card():
+    telegram = FakeTelegram()
+    state = draft(Note(description="text", lead="ул. Лесная, 1"))
     handler = NoteEditHandler(telegram)
 
     await handler.start_edit(1, state)
@@ -21,37 +25,62 @@ async def test_edit_allows_topic_change_and_returns_to_preview():
 
     assert state.state == NoteState.PREVIEW.value
     assert state.data["note"]["topic"] == "Покупка квартиры"
-    assert telegram.calls[-1][0] == "preview"
+    assert [call[0] for call in telegram.calls] == ["edit_menu", "edit_prompt", "preview"]
+    assert telegram.calls[0][2] == 500
+    assert telegram.calls[1][3] == 500
+    assert telegram.calls[2][3] == 500
 
 
 @pytest.mark.asyncio
 async def test_optional_field_can_be_cleared_with_dash():
     telegram = FakeTelegram()
-    state = FakeState()
+    state = draft(Note(description="text", next_step="Позвонить", topic="Тема"))
     state.state = NoteState.EDITING.value
-    state.data = {
-        "note": Note(description="text", next_step="Позвонить", topic="Тема").to_dict(),
-        "editing_field": "next_step",
-        "flow_id": "123",
-    }
+    state.data["editing_field"] = "next_step"
     handler = NoteEditHandler(telegram)
 
     await handler.save_edit(1, "-", state)
 
     assert state.data["note"]["next_step"] is None
+    assert telegram.calls[-1][0] == "preview"
+    assert telegram.calls[-1][3] == 500
 
 
 @pytest.mark.asyncio
-async def test_cancel_clears_active_note():
+async def test_back_to_preview_does_not_send_a_new_message():
     telegram = FakeTelegram()
-    state = FakeState()
-    state.state = NoteState.PREVIEW.value
-    state.data["note"] = Note(description="text", topic="Тема").to_dict()
-    state.data["flow_id"] = "123"
+    state = draft(Note(lead="79990000000", topic="Тема"))
     handler = NoteEditHandler(telegram)
 
-    await handler.cancel(1, state)
+    await handler.start_edit(1, state)
+    await handler.show_preview(1, state)
+
+    assert state.state == NoteState.PREVIEW.value
+    assert [call[0] for call in telegram.calls] == ["edit_menu", "preview"]
+    assert telegram.calls[-1][3] == 500
+
+
+@pytest.mark.asyncio
+async def test_typing_without_selected_field_refreshes_menu():
+    telegram = FakeTelegram()
+    state = draft(Note(lead="79990000000", topic="Тема"))
+    state.state = NoteState.EDITING.value
+    state.data["editing_field"] = None
+
+    await NoteEditHandler(telegram).save_edit(1, "Текст", state)
+
+    assert [call[0] for call in telegram.calls] == ["edit_menu"]
+    assert "Выберите поле" in telegram.calls[0][3]
+    assert state.data["note"]["topic"] == "Тема"
+
+
+@pytest.mark.asyncio
+async def test_cancel_clears_active_note_and_removes_buttons():
+    telegram = FakeTelegram()
+    state = draft(Note(description="text", topic="Тема"))
+
+    await NoteEditHandler(telegram).cancel(1, state)
 
     assert state.state is None
     assert state.data == {}
-    assert telegram.calls[-1][0] == "cancelled"
+    assert telegram.calls == [("cancelled", 500)]
