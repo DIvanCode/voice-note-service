@@ -85,3 +85,6 @@ class FakeTelegram:
 
     async def send_cancelled(self, user_id, message_id):
         self.calls.append(("cancelled", message_id))
+
+    async def send_next_note_prompt(self, user_id):
+        self.calls.append(("next_note", user_id))
