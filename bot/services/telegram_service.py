@@ -122,22 +122,20 @@ class TelegramService:
             text = notice + "\n\n" + text
         await self._edit_card(user_id, message_id, text, buttons)
 
-    async def send_edit_prompt(
-        self, user_id: int, field: str, flow_id: str, message_id: int, note: Note,
-        *, notice: str | None = None,
-    ) -> None:
+    async def send_edit_prompt(self, user_id: int, field: str) -> int:
+        """Ask for a field value in a separate temporary chat message."""
         hint = " Укажите телефон клиента для поиска в CRM." if field == "lead" else ""
-        text = (
-            f"Напишите новое значение для поля «{FIELD_LABELS[field]}».{hint} "
-            "Если хотите очистить поле, отправьте «-»."
+        sent = await self.bot.send_message(
+            user_id,
+            f"✏️ Редактируем поле «{FIELD_LABELS[field]}».\n"
+            f"Отправьте новое значение.{hint} "
+            "Чтобы очистить поле, отправьте «-».",
         )
-        text = self._preview_text(note, show_hints=False) + "\n\n✏️ " + text
-        if notice:
-            text = notice + "\n\n" + text
-        await self._edit_card(user_id, message_id, text, [
-            [InlineKeyboardButton(text="← Выбрать другое поле", callback_data=f"note:edit:{flow_id}")],
-            [InlineKeyboardButton(text="Отменить заметку", callback_data=f"note:cancel:{flow_id}")],
-        ])
+        return sent.message_id
+
+    async def delete_edit_prompt(self, user_id: int, message_id: int) -> None:
+        """Delete a temporary field prompt; keep note history untouched."""
+        await self.bot.delete_message(chat_id=user_id, message_id=message_id)
 
     async def send_revised_note_preview(
         self,
