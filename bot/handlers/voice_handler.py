@@ -35,11 +35,13 @@ class VoiceHandler:
                         notice = "Сначала завершите редактирование текущей заметки."
                         if field:
                             await self.telegram.send_edit_prompt(
-                                user_id, field, flow_id, card_id, notice=notice,
+                                user_id, field, flow_id, card_id,
+                                Note.from_dict(data["note"]), notice=notice,
                             )
                         else:
                             await self.telegram.send_edit_menu(
-                                user_id, flow_id, card_id, notice=notice,
+                                user_id, flow_id, card_id,
+                                Note.from_dict(data["note"]), notice=notice,
                             )
                     # PROCESSING / SAVING already show their current status.
             except Exception as exc:
