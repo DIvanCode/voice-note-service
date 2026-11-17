@@ -120,11 +120,12 @@ class CRMService:
         if urlsplit(self._url).scheme == "https" and client_phone == "79990000000":
             raise CRMError("test_data")
 
-        # Send every field supplied by the agent, including the lead; the
-        # separate client_phone field is still used by CRM for matching.
+        # The lead identifies the CRM client through client_phone; it is not
+        # part of the note body. Include only filled descriptive fields.
         body = "\n\n".join(
             f"{FIELD_LABELS[field]}: {value.strip()}"
             for field in FIELD_LABELS
+            if field != "lead"
             if isinstance(value := getattr(note, field), str) and value.strip()
         )
         if len(body) > MAX_NOTE_CHARS:
