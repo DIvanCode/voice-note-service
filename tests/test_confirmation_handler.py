@@ -104,6 +104,9 @@ async def test_known_crm_rejection_restores_draft_and_buttons():
     assert state.state == NoteState.PREVIEW.value
     assert state.data["note"]["description"] == "Private meeting"
     assert [call[0] for call in telegram.calls] == ["saving", "preview"]
+    # A recoverable CRM rejection keeps the draft active and must not
+    # invite a new voice message that the bot would reject as busy.
+    assert not any(call[0] == "next_note" for call in telegram.calls)
     assert telegram.calls[-1][3] == 500
     assert "не найден" in telegram.calls[-1][4]
     assert "Private meeting" not in telegram.calls[-1][4]
