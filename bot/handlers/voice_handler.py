@@ -30,19 +30,13 @@ class VoiceHandler:
                             user_id, Note.from_dict(data["note"]), flow_id, card_id,
                             notice="Сначала завершите текущую заметку. Затем можно отправить новое голосовое.",
                         )
-                    elif current_state == NoteState.EDITING.value:
-                        field = data.get("editing_field")
-                        notice = "Сначала завершите редактирование текущей заметки."
-                        if field:
-                            await self.telegram.send_edit_prompt(
-                                user_id, field, flow_id, card_id,
-                                Note.from_dict(data["note"]), notice=notice,
-                            )
-                        else:
-                            await self.telegram.send_edit_menu(
-                                user_id, flow_id, card_id,
-                                Note.from_dict(data["note"]), notice=notice,
-                            )
+                    elif current_state == NoteState.EDITING.value and data.get("note"):
+                        # Refresh the existing menu, but never create a second
+                        # temporary field prompt when another voice arrives.
+                        await self.telegram.send_edit_menu(
+                            user_id, flow_id, card_id, Note.from_dict(data["note"]),
+                            notice="Сначала завершите редактирование текущей заметки.",
+                        )
                     # PROCESSING / SAVING already show their current status.
             except Exception as exc:
                 logger.warning("Could not refresh active note card (%s)", type(exc).__name__)
