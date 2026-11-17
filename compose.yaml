@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
-      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LLAMA_URL: http://llama:8080
       UPSTREAM_TIMEOUT: ${UPSTREAM_TIMEOUT:-180}
@@ -14,15 +14,7 @@ services:
     volumes:
       - whisper_cache:/cache
     depends_on:
-      llama:
-        condition: service_healthy
-    read_only: true
-    tmpfs:
-      - /tmp:rw,nosuid,noexec,size=128m
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-
-  mock-crm:
+      mock-crm:
     build:
       context: .
       dockerfile: mock_crm/Dockerfile
@@ -62,23 +54,29 @@ services:
     security_opt: [no-new-privileges:true]
 
   llama:
-    build:
-      context: ./extractor
-      dockerfile: Dockerfile.llama.cpu
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=128m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  llama:
+    image: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
     restart: unless-stopped
     command:
       - --model
-      - /models/${MODEL_FILE:-Qwen3-8B-Q4_K_M.gguf}
+      - /models/${MODEL_FILE:-Qwen3-0.6B-Q8_0.gguf}
       - --host
       - 0.0.0.0
       - --port
       - "8080"
       - --ctx-size
-      - ${LLAMA_CONTEXT:-4096}
+      - ${LLAMA_CONTEXT:-2048}
       - --batch-size
-      - ${LLAMA_BATCH:-64}
+      - ${LLAMA_BATCH:-32}
       - --ubatch-size
-      - ${LLAMA_UBATCH:-32}
+      - ${LLAMA_UBATCH:-16}
       - --parallel
       - ${LLAMA_PARALLEL_SLOTS:-1}
       - --jinja
