@@ -28,7 +28,7 @@ class NoteConfirmationHandler:
         note = Note.from_dict(note_data)
         if not note.can_be_sent_to_crm:
             await state.set_state(NoteState.PREVIEW.value)
-            await self.telegram.send_topic_required(user_id)
+            await self.telegram.send_required_fields(user_id, note.missing_required_fields)
             return
 
         if self.user_phones is not None and user_id not in self.user_phones:
@@ -47,8 +47,8 @@ class NoteConfirmationHandler:
             await state.clear()
             await self.telegram.send_error(
                 user_id,
-                "CRM пока не подключена. Заметка не была отправлена. "
-                "Текущая заметка автоматически отменена — можно отправить новое голосовое сообщение.",
+                "Сейчас я ещё не могу отправлять заметки в CRM. Эту заметку не сохранил и закрыл. "
+                "Можете отправить новое голосовое.",
             )
             return
         except CRMError as exc:
