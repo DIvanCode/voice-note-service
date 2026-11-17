@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from bot.models.note import Note
 from bot.states.note_states import NoteState
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ class VoiceHandler:
                     NoteState.PREVIEW.value,
                     NoteState.EDITING.value,
                 },
+                can_confirm=bool(data.get("note") and Note.from_dict(data["note"]).can_be_sent_to_crm),
             )
             return
 
@@ -35,7 +37,7 @@ class VoiceHandler:
         try:
             audio = await self.telegram.download_voice(message)
             text = await self.stt.transcribe(audio)
-            # Customer transcripts must not be written to persistent storage.
+            # Keep sensitive transcripts in memory only.
             note = await self.extraction.extract(text)
 
             await state.update_data(note=note.to_dict())
