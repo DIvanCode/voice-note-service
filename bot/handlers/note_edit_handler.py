@@ -112,4 +112,7 @@ class NoteEditHandler:
         data = await state.get_data()
         await state.clear()
         await self._remove_prompt(user_id, data.get("edit_prompt_message_id"))
-        await self.telegram.send_cancelled(user_id, data["ui_message_id"])
+        try:
+            await self.telegram.send_cancelled(user_id, data["ui_message_id"])
+        finally:
+            await self.telegram.send_next_note_prompt(user_id)
