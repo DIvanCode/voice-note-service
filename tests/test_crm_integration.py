@@ -1,4 +1,5 @@
 import json
+import re
 
 import httpx
 import pytest
@@ -36,8 +37,18 @@ async def test_save_and_view_requires_separate_password(app):
         notes = await client.get("/api/notes", auth=("viewer", VIEW))
         assert notes.status_code == 200
         assert notes.json()["notes"][0]["type"] == "public"
+        assert notes.json()["notes"][0]["client_full_name"] == "Тестовый Клиент"
+        assert notes.json()["notes"][0]["agent_full_name"] == "Тестовый Агент"
         assert "Договорились" in notes.json()["notes"][0]["note"]
         assert notes.headers["Cache-Control"] == "no-store"
+        page = await client.get("/notes", auth=("viewer", VIEW))
+        assert page.status_code == 200
+        assert "<th>Тип</th>" not in page.text
+        assert "<th>Клиент</th>" in page.text
+        assert "<th>Агент</th>" in page.text
+        assert "Тестовый Клиент" in page.text
+        assert "Тестовый Агент" in page.text
+        assert re.search(r"\\d{2}\\.\\d{2}\\.\\d{4}, \\d{2}:\\d{2} UTC", page.text)
 
 
 @pytest.mark.asyncio
@@ -82,7 +93,7 @@ async def test_six_fields_sent_to_crm_and_successful_http_500_accepted():
         payload = json.loads(request.content)
         assert payload == {
             "key": KEY,
-            "note": "Тема: Встреча\n\nОписание: Текст\n\nСледующий шаг: Позвонить\n\nСрок: Завтра\n\nДополнительная информация: Договор",
+            "note": "Лид: +79990000000\n\nТема: Встреча\n\nОписание: Текст\n\nСледующий шаг: Позвонить\n\nСрок: Завтра\n\nДополнительная информация: Договор",
             "user_phone": AGENT,
             "client_phone": CLIENT,
         }
@@ -135,6 +146,8 @@ async def test_http_client_to_mock_end_to_end(app):
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://mock-crm") as client:
         resp = await client.get("/api/notes", auth=("viewer", VIEW))
     assert len(resp.json()["notes"]) == 1
+    assert "Лид: 79990000000" in resp.json()["notes"][0]["note"]
+    assert "Тема: Сделка" in resp.json()["notes"][0]["note"]
     assert "Описание: Обсудили цену" in resp.json()["notes"][0]["note"]
 
 
@@ -200,3 +213,47 @@ async def test_transport_errors_are_uncertain_and_not_retried():
     assert exc.value.code == "unknown_result"
     assert "sensitive" not in str(exc.value)
     assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_notes_ui_escapes_client_and_agent_names_from_fixtures():
+    fixtures = {
+        "agents": [
+            {"id": 123, "company_id": 456, "full_name": "<b>Агент</b>", "phone": AGENT, "active": True}
+        ],
+        "clients": [
+            {"id": 789, "company_id": 456, "full_name": "<script>alert(1)</script>", "phone": CLIENT}
+        ],
+    }
+    app = create_app(api_key=KEY, view_password=VIEW, fixtures=fixtures)
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://mock-crm") as client:
+        saved = await client.post("/client/add-note", json={
+            "key": KEY, "note": "Лид: " + CLIENT + "\\n\\nТема: Тест",
+            "user_phone": AGENT, "client_phone": CLIENT,
+        })
+        assert saved.status_code == 201
+        page = await client.get("/notes", auth=("viewer", VIEW))
+        assert "&lt;b&gt;Агент&lt;/b&gt;" in page.text
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page.text
+        assert "<script>alert(1)</script>" not in page.text
+        assert "<b>Агент</b>" not in page.text
+
+
+@pytest.mark.asyncio
+async def test_only_filled_agent_fields_are_included_in_crm_note(app):
+    crm = CRMService("http://mock-crm:8000/client/add-note", KEY, transport=ASGITransport(app=app))
+    await crm.create_note(
+        Note(lead="+" + CLIENT, topic="Встреча", description="  Показ квартиры  ", next_step=None,
+             deadline="  ", additional_info="Нужна парковка"),
+        user_phone=AGENT,
+    )
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://mock-crm") as client:
+        data = (await client.get("/api/notes", auth=("viewer", VIEW))).json()
+        note_text = data["notes"][0]["note"]
+        assert note_text == ("Лид: +" + CLIENT + "\\n\\nТема: Встреча"
+                             + "\\n\\nОписание: Показ квартиры"
+                             + "\\n\\nДополнительная информация: Нужна парковка")
+        page = await client.get("/notes", auth=("viewer", VIEW))
+        assert "Дополнительная информация: Нужна парковка" in page.text
+        assert "Следующий шаг:" not in page.text
+        assert "Срок:" not in page.text
