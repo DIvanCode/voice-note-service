@@ -23,6 +23,10 @@ class ExtractorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.valid = {field: None for field in extractor.FIELDS}
 
+    def test_schema_matches_note_contract(self) -> None:
+        self.assertEqual(set(extractor.FIELDS), set(extractor.SCHEMA["required"]))
+        self.assertEqual(set(extractor.FIELDS), set(extractor.SCHEMA["properties"]))
+
     def test_validate_result_accepts_exact_contract(self) -> None:
         self.assertEqual(extractor.validate_result(self.valid), self.valid)
 
@@ -32,7 +36,7 @@ class ExtractorTests(unittest.TestCase):
             extractor.validate_result(result)
 
     def test_validate_result_rejects_wrong_type(self) -> None:
-        result = {**self.valid, "budget": 100000}
+        result = {**self.valid, "deadline": 100000}
         with self.assertRaises(ValueError):
             extractor.validate_result(result)
 

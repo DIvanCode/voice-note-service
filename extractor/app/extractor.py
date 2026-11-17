@@ -42,7 +42,7 @@ LLAMA_PARALLEL_SLOTS = config_value("LLAMA_PARALLEL_SLOTS", "1")
 MAX_TEXT_CHARS = int(config_value("MAX_TEXT_CHARS", "50000"))
 UPSTREAM_TIMEOUT = float(config_value("UPSTREAM_TIMEOUT", "180"))
 LLAMA_STARTUP_TIMEOUT = float(config_value("LLAMA_STARTUP_TIMEOUT", "300"))
-FIELDS = ("client", "problem", "product", "budget", "deadline", "next_step")
+FIELDS = ("lead", "topic", "description", "next_step", "deadline", "additional_info")
 LOGGER = logging.getLogger(__name__)
 LAST_STARTUP_MS: float | None = None
 
@@ -193,7 +193,7 @@ def _request_body(text: str) -> bytes:
             {"role": "user", "content": f"/no_think\nРасшифровка:\n{text}"},
         ],
         "temperature": 0,
-        "max_tokens": 256,
+        "max_tokens": 512,
         "stream": False,
         "response_format": {
             "type": "json_schema",

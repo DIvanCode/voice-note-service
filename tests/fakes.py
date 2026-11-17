@@ -53,11 +53,11 @@ class FakeTelegram:
     async def send_error(self, user_id, message):
         self.calls.append(("error", message))
 
-    async def send_busy(self, user_id, flow_id, with_actions=True):
-        self.calls.append(("busy", with_actions, flow_id))
+    async def send_busy(self, user_id, flow_id, with_actions=True, can_confirm=False):
+        self.calls.append(("busy", with_actions, flow_id, can_confirm))
 
-    async def send_topic_required(self, user_id):
-        self.calls.append(("topic_required", None))
+    async def send_required_fields(self, user_id, fields):
+        self.calls.append(("required_fields", fields))
 
     async def send_edit_menu(self, user_id, flow_id):
         self.calls.append(("edit_menu", flow_id))
