@@ -26,3 +26,18 @@ def test_existing_whisper_cache_has_opt_in_least_privilege_migration():
     assert "whisper_cache:/cache" in bot["volumes"]
     assert "whisper-cache-migrate" not in (bot.get("depends_on") or {})
     assert "whisper-cache-migrate" not in (services["llama"].get("depends_on") or {})
+
+def test_base_compose_has_four_independent_services_and_valid_bot_dependency():
+    compose = yaml.safe_load(Path("compose.yaml").read_text(encoding="utf-8"))
+    services = compose["services"]
+
+    assert set(services) == {"bot", "mock-crm", "llama", "whisper-cache-migrate"}
+    assert services["bot"]["depends_on"] == {"llama": {"condition": "service_healthy"}}
+    assert services["bot"]["read_only"] is True
+    assert services["bot"]["cap_drop"] == ["ALL"]
+
+    assert services["mock-crm"]["build"]["dockerfile"] == "mock_crm/Dockerfile"
+    assert services["mock-crm"]["ports"][0].startswith("127.0.0.1:")
+    assert "MOCK_CRM_API_KEY" in services["mock-crm"]["environment"]
+    assert "MOCK_CRM_VIEW_PASSWORD" in services["mock-crm"]["environment"]
+    assert services["llama"]["image"].startswith("${LLAMA_IMAGE:-")
