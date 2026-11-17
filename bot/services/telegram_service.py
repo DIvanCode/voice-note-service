@@ -192,7 +192,7 @@ class TelegramService:
     async def send_cancelled(self, user_id: int, message_id: int) -> None:
         await self._edit_card(
             user_id, message_id,
-            "Заметку отменили. Можете отправить новое голосовое.",
+            "Заметку отменили.",
         )
 
     @staticmethod
