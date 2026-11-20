@@ -88,8 +88,8 @@ if [[ ! "$model_file" =~ ^[[:alnum:]_.-]+\.gguf$ ]]; then
   exit 1
 fi
 
-mkdir -p extractor/models data
-chmod 755 extractor/models data
+mkdir -p extractor/models
+chmod 755 extractor/models
 model_path="extractor/models/$model_file"
 if [[ ! -s "$model_path" ]]; then
   if [[ "$model_file" != Qwen3-0.6B-Q8_0.gguf ]]; then
@@ -115,7 +115,10 @@ fi
 
 docker compose "${compose_files[@]}" config --quiet
 docker compose "${compose_files[@]}" pull llama
-docker compose "${compose_files[@]}" up -d --build
+# The mock CRM requires separately configured credentials. Keep the quick
+# start functional with bot + llama only; mock is opt-in for this helper.
+docker compose "${compose_files[@]}" up -d --build bot
 docker compose "${compose_files[@]}" ps
-printf '\nBot setup finished. Send /start to your bot in Telegram.\n'
+printf '\nBot started. Configure CRM_AGENT_BINDINGS in .env to authorize your Telegram account.\n'
+printf 'For mock CRM set CRM_API_KEY and MOCK_CRM_VIEW_PASSWORD; then run docker compose up -d --build.\n'
 printf 'To view logs: docker compose %s logs -f bot llama\n' "${compose_files[*]}"

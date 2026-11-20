@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.models.note import FIELD_LABELS, Note
@@ -33,24 +34,77 @@ class TelegramService:
             "Любое поле можно исправить перед подтверждением.",
         )
 
-    async def send_note_preview(self, user_id: int, note: Note, flow_id: str) -> None:
-        field_lines = [
-            f"{label}:\n{self._preview_value(getattr(note, field), PREVIEW_DESCRIPTION_LIMIT if field == 'description' else PREVIEW_FIELD_LIMIT)}"
-            for field, label in FIELD_LABELS.items()
-        ]
-        text = "Проверьте заметку перед отправкой:\n\n" + "\n\n".join(field_lines)
-        if note.missing_required_fields:
-            labels = ", ".join(FIELD_LABELS[field] for field in note.missing_required_fields)
-            text += f"\n\nЧтобы отправить заметку в CRM, добавьте: {labels}. Лид — это адрес объекта или телефон человека."
-        if note.missing_recommended_fields:
-            labels = ", ".join(FIELD_LABELS[field] for field in note.missing_recommended_fields)
-            text += f"\n\nСоветую дополнить: {labels}. Заметку можно отправить и без них."
-
-        buttons = self._action_buttons(flow_id, note.can_be_sent_to_crm)
+    async def send_next_note_prompt(self, user_id: int) -> None:
+        """Invite the user to start another note after the current one closes."""
         await self.bot.send_message(
             user_id,
-            text,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+            "🎙️ Готов к следующей заметке!\n"
+            "Отправьте голосовое сообщение об итогах новой встречи. "
+            "Я расшифрую его, подготовлю заметку и дам проверить её перед отправкой в CRM.",
+        )
+
+    async def send_processing(self, user_id: int) -> int:
+        """Create a processing message that becomes the first note preview."""
+        await self.bot.send_chat_action(user_id, "typing")
+        sent = await self.bot.send_message(
+            user_id,
+            "🎙️ Голосовое получено. Расшифровываю и составляю заметку…",
+        )
+        return sent.message_id
+
+    async def _edit_card(
+        self,
+        user_id: int,
+        message_id: int,
+        text: str,
+        buttons: list[list[InlineKeyboardButton]] | None = None,
+    ) -> None:
+        markup = InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
+        try:
+            await self.bot.edit_message_text(
+                text=text,
+                chat_id=user_id,
+                message_id=message_id,
+                reply_markup=markup,
+            )
+        except TelegramBadRequest as exc:
+            # Repeated clicks or a duplicate voice can produce an identical edit.
+            if "message is not modified" not in str(exc).lower():
+                raise
+
+    @staticmethod
+    def _preview_text(
+        note: Note, *, show_hints: bool = True,
+        heading: str = "Проверьте заметку перед отправкой:",
+    ) -> str:
+        field_lines = [
+            f"{label}:\n{TelegramService._preview_value(getattr(note, field), PREVIEW_DESCRIPTION_LIMIT if field == 'description' else PREVIEW_FIELD_LIMIT)}"
+            for field, label in FIELD_LABELS.items()
+        ]
+        text = heading + "\n\n" + "\n\n".join(field_lines)
+        if show_hints and note.missing_required_fields:
+            labels = ", ".join(FIELD_LABELS[field] for field in note.missing_required_fields)
+            text += f"\n\nЧтобы отправить заметку в CRM, добавьте: {labels}. Для CRM нужен телефон клиента в поле «Лид»."
+        if show_hints and note.missing_recommended_fields:
+            labels = ", ".join(FIELD_LABELS[field] for field in note.missing_recommended_fields)
+            text += f"\n\nСоветую дополнить: {labels}. Заметку можно отправить и без них."
+        return text
+
+    async def send_note_preview(
+        self,
+        user_id: int,
+        note: Note,
+        flow_id: str,
+        message_id: int,
+        *,
+        notice: str | None = None,
+    ) -> None:
+        text = self._preview_text(note)
+        if notice:
+            text = notice + "\n\n" + text
+        await self._edit_card(
+            user_id, message_id, text,
+            self._action_buttons(flow_id, note.can_be_sent_to_crm),
         )
 
     @staticmethod
@@ -62,65 +116,84 @@ class TelegramService:
         buttons.append([InlineKeyboardButton(text="Отменить", callback_data=f"note:cancel:{flow_id}")])
         return buttons
 
-    async def send_edit_menu(self, user_id: int, flow_id: str) -> None:
+    async def send_edit_menu(
+        self, user_id: int, flow_id: str, message_id: int, note: Note,
+        *, notice: str | None = None,
+    ) -> None:
         buttons = [
             [InlineKeyboardButton(text=label, callback_data=f"note:field:{flow_id}:{field}")]
             for field, label in FIELD_LABELS.items()
         ]
+        buttons.append([InlineKeyboardButton(text="← К заметке", callback_data=f"note:preview:{flow_id}")])
         buttons.append([InlineKeyboardButton(text="Отменить заметку", callback_data=f"note:cancel:{flow_id}")])
-        await self.bot.send_message(
+        text = self._preview_text(note, show_hints=False) + "\n\n✏️ Что хотите изменить?"
+        if notice:
+            text = notice + "\n\n" + text
+        await self._edit_card(user_id, message_id, text, buttons)
+
+    async def send_edit_prompt(self, user_id: int, field: str) -> int:
+        """Ask for a field value in a separate temporary chat message."""
+        hint = " Укажите телефон клиента для поиска в CRM." if field == "lead" else ""
+        sent = await self.bot.send_message(
             user_id,
-            "Что хотите изменить?",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+            f"✏️ Редактируем поле «{FIELD_LABELS[field]}».\n"
+            f"Отправьте новое значение.{hint} "
+            "Чтобы очистить поле, отправьте «-».",
         )
+        return sent.message_id
 
-    async def send_edit_prompt(self, user_id: int, field: str) -> None:
-        hint = " Укажите адрес объекта или телефон человека." if field == "lead" else ""
-        await self.bot.send_message(
-            user_id,
-            f"Напишите новое значение для поля «{FIELD_LABELS[field]}».{hint} "
-            "Если хотите очистить поле, отправьте «-».",
-        )
+    async def delete_edit_prompt(self, user_id: int, message_id: int) -> None:
+        """Delete a temporary field prompt; keep note history untouched."""
+        await self.bot.delete_message(chat_id=user_id, message_id=message_id)
 
-    async def send_success(self, user_id: int) -> None:
-        await self.bot.send_message(user_id, "Готово, заметка сохранена в CRM.")
-
-    async def send_error(self, user_id: int, message: str) -> None:
-        await self.bot.send_message(user_id, message)
-
-    async def send_busy(
+    async def send_revised_note_preview(
         self,
         user_id: int,
-        flow_id: str | None,
-        with_actions: bool = True,
-        can_confirm: bool = False,
-    ) -> None:
-        reply_markup = None
-        if with_actions and flow_id is not None:
-            reply_markup = InlineKeyboardMarkup(
-                inline_keyboard=self._action_buttons(flow_id, can_confirm),
-            )
-
-        text = (
-            "Давайте сначала закончим текущую заметку. Это голосовое можно просто переслать сюда, "
-            "когда подтвердите или отмените текущую."
-            if with_actions
-            else "Я ещё разбираю предыдущее голосовое. Это сообщение можно просто переслать сюда, "
-            "когда закончим с текущей заметкой."
-        )
-        await self.bot.send_message(user_id, text, reply_markup=reply_markup)
-
-    async def send_required_fields(self, user_id: int, fields: tuple[str, ...]) -> None:
-        labels = ", ".join(FIELD_LABELS[field] for field in fields)
-        lead_hint = " Для лида подойдёт адрес объекта или телефон человека." if "lead" in fields else ""
-        await self.bot.send_message(
+        note: Note,
+        flow_id: str,
+        previous_message_id: int,
+        previous_note: Note,
+    ) -> int:
+        """Keep the previous note as history without actions; send an updated card."""
+        # First remove the old actions so that only the new revision can be
+        # confirmed. Preserve the original fields instead of leaving an edit prompt.
+        await self._edit_card(
             user_id,
-            f"Пока не могу отправить заметку в CRM: добавьте {labels}.{lead_hint} "
-            "Нажмите «Исправить».",
+            previous_message_id,
+            self._preview_text(
+                previous_note, show_hints=False, heading="Предыдущая версия заметки:"
+            ),
+        )
+        sent = await self.bot.send_message(
+            user_id,
+            self._preview_text(note),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=self._action_buttons(flow_id, note.can_be_sent_to_crm)
+            ),
+        )
+        return sent.message_id
+
+    async def send_saving(self, user_id: int, message_id: int) -> None:
+        # Disable the submit button while the CRM request is in flight.
+        await self._edit_card(user_id, message_id, "⏳ Отправляю заметку в CRM…")
+
+    async def send_success(self, user_id: int, message_id: int, note: Note) -> None:
+        await self._edit_card(
+            user_id, message_id,
+            self._preview_text(note, show_hints=False, heading="✅ Заметка сохранена в CRM."),
         )
 
-    async def send_cancelled(self, user_id: int) -> None:
-        await self.bot.send_message(user_id, "Заметку отменили. Можете отправить новое голосовое.")
+    async def send_error(self, user_id: int, message: str, message_id: int | None = None) -> None:
+        if message_id is None:
+            await self.bot.send_message(user_id, message)
+        else:
+            await self._edit_card(user_id, message_id, "❌ " + message)
+
+    async def send_cancelled(self, user_id: int, message_id: int) -> None:
+        await self._edit_card(
+            user_id, message_id,
+            "Заметку отменили.",
+        )
 
     @staticmethod
     def _preview_value(value: str | None, limit: int) -> str:

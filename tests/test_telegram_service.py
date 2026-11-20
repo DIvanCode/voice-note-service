@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from bot.models.note import Note
@@ -7,9 +9,31 @@ from bot.services.telegram_service import TelegramService
 class FakeBot:
     def __init__(self):
         self.messages = []
+        self.edits = []
+        self.actions = []
+        self.next_id = 500
+        self.deleted = []
 
     async def send_message(self, user_id, text, **kwargs):
         self.messages.append((user_id, text, kwargs))
+        message_id = self.next_id
+        self.next_id += 1
+        return SimpleNamespace(message_id=message_id)
+
+    async def send_chat_action(self, user_id, action):
+        self.actions.append((user_id, action))
+
+    async def edit_message_text(self, *, chat_id, message_id, text, reply_markup=None):
+        self.edits.append((chat_id, message_id, text, reply_markup))
+        return True
+
+    async def delete_message(self, *, chat_id, message_id):
+        self.deleted.append((chat_id, message_id))
+        return True
+
+
+def callbacks(markup):
+    return [button.callback_data for row in markup.inline_keyboard for button in row]
 
 
 @pytest.mark.asyncio
@@ -25,46 +49,34 @@ async def test_start_explains_required_and_recommended_fields():
 
 
 @pytest.mark.asyncio
-async def test_busy_message_explains_forwarding_and_only_valid_actions():
+async def test_processing_shows_typing_and_creates_only_one_card():
     bot = FakeBot()
-    service = TelegramService(bot)
+    card_id = await TelegramService(bot).send_processing(42)
 
-    await service.send_busy(42, flow_id="abc", with_actions=True, can_confirm=False)
-
-    _, text, kwargs = bot.messages[0]
-    assert "переслать" in text
-    callbacks = [row[0].callback_data for row in kwargs["reply_markup"].inline_keyboard]
-    assert callbacks == ["note:edit:abc", "note:cancel:abc"]
+    assert bot.actions == [(42, "typing")]
+    assert card_id == 500
+    assert len(bot.messages) == 1
+    assert "Голосовое получено" in bot.messages[0][1]
+    assert bot.edits == []
 
 
 @pytest.mark.asyncio
-async def test_processing_busy_message_has_no_actions():
-    bot = FakeBot()
-    service = TelegramService(bot)
-
-    await service.send_busy(42, flow_id=None, with_actions=False)
-
-    _, text, kwargs = bot.messages[0]
-    assert "переслать" in text
-    assert kwargs["reply_markup"] is None
-
-
-@pytest.mark.asyncio
-async def test_preview_warns_about_recommended_fields_but_allows_confirmation():
+async def test_preview_updates_original_card_and_allows_confirmation():
     bot = FakeBot()
     service = TelegramService(bot)
     await service.send_note_preview(
         42,
-        Note(lead="ул. Лесная, 1", topic="Встреча", description="Обсудили квартиру"),
-        flow_id="voice-100",
+        Note(lead="79997654321", topic="Встреча", description="Обсудили квартиру"),
+        flow_id="voice-100", message_id=500,
     )
 
-    _, text, kwargs = bot.messages[0]
+    chat_id, message_id, text, markup = bot.edits[0]
+    assert (chat_id, message_id) == (42, 500)
+    assert bot.messages == []
     assert "Лид:" in text
     assert "Описание:" in text
     assert "Советую дополнить: Следующий шаг, Срок" in text
-    callbacks = [row[0].callback_data for row in kwargs["reply_markup"].inline_keyboard]
-    assert callbacks == [
+    assert callbacks(markup) == [
         "note:confirm:voice-100",
         "note:edit:voice-100",
         "note:cancel:voice-100",
@@ -74,25 +86,105 @@ async def test_preview_warns_about_recommended_fields_but_allows_confirmation():
 @pytest.mark.asyncio
 async def test_preview_without_lead_and_topic_has_no_confirmation():
     bot = FakeBot()
-    await TelegramService(bot).send_note_preview(42, Note(description="Текст"), "100")
+    await TelegramService(bot).send_note_preview(
+        42, Note(description="Текст"), "100", 500,
+    )
 
-    _, text, kwargs = bot.messages[0]
+    _, _, text, markup = bot.edits[0]
     assert "добавьте: Лид, Тема" in text
-    assert "адрес объекта или телефон" in text
-    callbacks = [row[0].callback_data for row in kwargs["reply_markup"].inline_keyboard]
-    assert "note:confirm:100" not in callbacks
+    assert "телефон клиента" in text
+    assert "note:confirm:100" not in callbacks(markup)
 
 
 @pytest.mark.asyncio
-async def test_edit_menu_contains_all_six_fields():
+async def test_edit_menu_contains_all_six_fields_and_navigation():
     bot = FakeBot()
-    await TelegramService(bot).send_edit_menu(42, "100")
+    service = TelegramService(bot)
+    await service.send_edit_menu(42, "100", 500, Note(lead="79990000000", topic="Тема"))
 
-    callbacks = [row[0].callback_data for row in bot.messages[0][2]["reply_markup"].inline_keyboard]
-    assert callbacks[:-1] == [
+    cb = callbacks(bot.edits[0][3])
+    assert cb == [
         f"note:field:100:{field}"
         for field in ("lead", "topic", "description", "next_step", "deadline", "additional_info")
+    ] + ["note:preview:100", "note:cancel:100"]
+    assert bot.messages == []
+
+
+@pytest.mark.asyncio
+async def test_edit_prompt_is_separate_temporary_message_and_can_be_deleted():
+    bot = FakeBot()
+    service = TelegramService(bot)
+    await service.send_edit_menu(42, "100", 500, Note(lead="79990000000", topic="Тема"))
+    prompt_id = await service.send_edit_prompt(42, "lead")
+
+    assert prompt_id == 500
+    assert len(bot.messages) == 1
+    assert "Редактируем поле «Лид»" in bot.messages[0][1]
+    assert "телефон клиента" in bot.messages[0][1]
+    assert len(bot.edits) == 1
+    assert "Тема:\nТема" in bot.edits[0][2]
+
+    await service.delete_edit_prompt(42, prompt_id)
+    assert bot.deleted == [(42, 500)]
+
+
+@pytest.mark.asyncio
+async def test_next_note_prompt_is_separate_not_a_welcome_repeat():
+    bot = FakeBot()
+    await TelegramService(bot).send_next_note_prompt(42)
+
+    assert len(bot.messages) == 1
+    assert "следующей заметке" in bot.messages[0][1]
+    assert "Привет" not in bot.messages[0][1]
+    assert bot.messages[0][2] == {}
+
+
+@pytest.mark.asyncio
+async def test_corrected_note_gets_new_message_and_previous_version_has_no_actions():
+    bot = FakeBot()
+    service = TelegramService(bot)
+    assert await service.send_processing(42) == 500
+    previous = Note(lead="79990000000", topic="Старая тема", description="До правки")
+    corrected = Note(lead="79990000000", topic="Новая тема", description="До правки")
+    await service.send_note_preview(42, previous, "100", 500)
+    new_id = await service.send_revised_note_preview(
+        42, corrected, "100", 500, previous,
+    )
+
+    assert new_id == 501
+    assert len(bot.messages) == 2
+    assert len(bot.edits) == 2
+    assert bot.edits[0][3] is not None
+    assert bot.edits[1][1] == 500
+    assert bot.edits[1][3] is None
+    assert "Предыдущая версия заметки:" in bot.edits[1][2]
+    assert "Старая тема" in bot.edits[1][2]
+    assert "Новая тема" not in bot.edits[1][2]
+    assert "Новая тема" in bot.messages[1][1]
+    assert callbacks(bot.messages[1][2]["reply_markup"]) == [
+        "note:confirm:100", "note:edit:100", "note:cancel:100",
     ]
+
+
+@pytest.mark.asyncio
+async def test_send_and_cancel_remove_buttons_without_new_message():
+    bot = FakeBot()
+    service = TelegramService(bot)
+    note = Note(lead="79990000000", topic="Тема", description="Описание")
+    await service.send_note_preview(42, note, "100", 500)
+    await service.send_saving(42, 500)
+    await service.send_success(42, 500, note)
+
+    assert len(bot.messages) == 0
+    assert len(bot.edits) == 3
+    assert all(edit[1] == 500 for edit in bot.edits)
+    assert bot.edits[0][3] is not None
+    assert bot.edits[1][3] is None
+    assert bot.edits[2][3] is None
+    assert "сохранена в CRM" in bot.edits[-1][2]
+
+    await service.send_cancelled(42, 500)
+    assert bot.edits[-1][3] is None
 
 
 @pytest.mark.asyncio
@@ -102,9 +194,9 @@ async def test_long_preview_is_truncated_but_complete_description_is_unchanged()
     original_text = "x" * 10000
     note = Note(lead="+7999", topic="Тема", description=original_text)
 
-    await service.send_note_preview(42, note, flow_id="100")
+    await service.send_note_preview(42, note, flow_id="100", message_id=500)
 
-    _, text, _ = bot.messages[0]
+    text = bot.edits[0][2]
     assert len(text) <= 4096
     assert "текст сокращён" in text
     assert note.description == original_text

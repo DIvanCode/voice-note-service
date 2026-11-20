@@ -6,15 +6,60 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
       WHISPER_MODEL: ${WHISPER_MODEL:-small}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      TRANSCRIPT_FILE: /data/transcriptions.log
       LLAMA_URL: http://llama:8080
       UPSTREAM_TIMEOUT: ${UPSTREAM_TIMEOUT:-180}
+      CRM_URL: ${CRM_URL:-http://mock-crm:8000/client/add-note}
+      CRM_API_KEY: ${CRM_API_KEY:-}
+      CRM_AGENT_BINDINGS: ${CRM_AGENT_BINDINGS:-}
     volumes:
-      - ./data:/data
       - whisper_cache:/cache
     depends_on:
       llama:
         condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=128m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  mock-crm:
+    build:
+      context: .
+      dockerfile: mock_crm/Dockerfile
+    restart: unless-stopped
+    environment:
+      MOCK_CRM_API_KEY: ${CRM_API_KEY:-}
+      MOCK_CRM_VIEW_PASSWORD: ${MOCK_CRM_VIEW_PASSWORD:-}
+    ports:
+      - "127.0.0.1:${MOCK_CRM_PORT:-8765}:8000"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=16m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    expose:
+      - "8000"
+
+  # One-shot, opt-in migration for Whisper cache owned by the old root image.
+  # Runs without network or credentials and has only CAP_CHOWN.
+  whisper-cache-migrate:
+    profiles: [maintenance]
+    image: python:3.12-slim-bookworm
+    user: "0:0"
+    entrypoint: ["chown", "-R", "10001:10001", "/cache"]
+    restart: "no"
+    network_mode: "none"
+    read_only: true
+    volumes:
+      - whisper_cache:/cache
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
 
   llama:
     image: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}

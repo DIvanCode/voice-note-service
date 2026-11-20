@@ -15,65 +15,85 @@ class STT:
 class Extraction:
     async def extract(self, text):
         assert text == "transcript"
-        return Note(
-            lead="+7999",
-            topic="Встреча",
-            description="result",
-        )
+        return Note(lead="+7999", topic="Встреча", description="result")
 
 
 @pytest.mark.asyncio
-async def test_voice_pipeline_stores_note_and_shows_preview():
+async def test_voice_pipeline_creates_one_card_then_edits_it_to_preview():
     telegram = FakeTelegram()
     state = FakeState()
-    handler = VoiceHandler(telegram, STT(), Extraction())
 
-    await handler.handle_voice(FakeMessage(), state)
+    await VoiceHandler(telegram, STT(), Extraction()).handle_voice(FakeMessage(), state)
 
     assert state.state == NoteState.PREVIEW.value
     assert state.data["note"]["topic"] == "Встреча"
     assert state.data["flow_id"] == "100"
-    assert [call[0] for call in telegram.calls] == ["download", "preview"]
+    assert state.data["ui_message_id"] == 500
+    assert [call[0] for call in telegram.calls] == ["processing", "download", "preview"]
     assert telegram.calls[-1][2] == "100"
+    assert telegram.calls[-1][3] == 500
 
 
 @pytest.mark.asyncio
-async def test_second_voice_is_rejected_while_note_is_active():
+async def test_second_voice_updates_existing_preview_not_new_message():
     telegram = FakeTelegram()
     state = FakeState()
     state.state = NoteState.PREVIEW.value
-    state.data["flow_id"] = "77"
-    handler = VoiceHandler(telegram, STT(), Extraction())
+    state.data.update(
+        flow_id="77", ui_message_id=500,
+        note=Note(lead="79997654321", topic="Встреча").to_dict(),
+    )
 
-    await handler.handle_voice(FakeMessage(), state)
+    await VoiceHandler(telegram, STT(), Extraction()).handle_voice(FakeMessage(), state)
 
-    assert telegram.calls == [("busy", True, "77", False)]
+    assert [call[0] for call in telegram.calls] == ["preview"]
+    assert telegram.calls[0][2] == "77"
+    assert telegram.calls[0][3] == 500
+    assert "Сначала завершите" in telegram.calls[0][4]
 
 
 @pytest.mark.asyncio
-async def test_processing_failure_clears_state():
+async def test_processing_failure_edits_processing_card_to_error():
     class BrokenSTT:
         async def transcribe(self, audio):
             raise RuntimeError("secret transcript must not be logged")
 
     telegram = FakeTelegram()
     state = FakeState()
-    handler = VoiceHandler(telegram, BrokenSTT(), Extraction())
 
-    await handler.handle_voice(FakeMessage(), state)
+    await VoiceHandler(telegram, BrokenSTT(), Extraction()).handle_voice(FakeMessage(), state)
 
     assert state.state is None
     assert state.data == {}
-    assert telegram.calls[-1][0] == "error"
+    assert [call[0] for call in telegram.calls] == ["processing", "download", "error", "next_note"]
+    assert telegram.calls[-2][2] == 500
+    assert telegram.calls[-1] == ("next_note", 1)
 
 
 @pytest.mark.asyncio
-async def test_second_voice_during_processing_has_no_invalid_actions():
+async def test_second_voice_during_processing_does_not_create_any_bot_message():
     telegram = FakeTelegram()
     state = FakeState()
     state.state = NoteState.PROCESSING.value
-    handler = VoiceHandler(telegram, STT(), Extraction())
+    state.data.update(flow_id="77", ui_message_id=500)
 
-    await handler.handle_voice(FakeMessage(), state)
+    await VoiceHandler(telegram, STT(), Extraction()).handle_voice(FakeMessage(), state)
 
-    assert telegram.calls == [("busy", False, None, False)]
+    assert telegram.calls == []
+
+
+@pytest.mark.asyncio
+async def test_second_voice_while_editing_keeps_same_card():
+    telegram = FakeTelegram()
+    state = FakeState()
+    state.state = NoteState.EDITING.value
+    state.data.update(
+        flow_id="77", ui_message_id=500, editing_field="topic",
+        note=Note(lead="79990000000", topic="Встреча").to_dict(),
+    )
+
+    await VoiceHandler(telegram, STT(), Extraction()).handle_voice(FakeMessage(), state)
+
+    assert telegram.calls[0][0] == "edit_menu"
+    assert telegram.calls[0][2] == 500
+    assert "Сначала завершите" in telegram.calls[0][3]

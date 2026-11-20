@@ -1,0 +1,12 @@
+{
+  "agents": [
+    {"id": 123, "company_id": 456, "full_name": "Тестовый Агент", "phone": "79991234567", "active": true},
+    {"id": 124, "company_id": 456, "full_name": "Неактивный Агент", "phone": "79991110000", "active": false}
+  ],
+  "clients": [
+    {"id": 789, "company_id": 456, "full_name": "Тестовый Клиент", "phone": "79990000000"},
+    {"id": 790, "company_id": 456, "full_name": "Другой Клиент", "phone": "79997654321"},
+    {"id": 791, "company_id": 456, "full_name": "Дубликат А", "phone": "79998887766"},
+    {"id": 792, "company_id": 456, "full_name": "Дубликат Б", "phone": "79998887766"}
+  ]
+}
